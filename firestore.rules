@@ -1,0 +1,106 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function userData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isAdmin() {
+      return signedIn() && userData().role == "admin";
+    }
+
+    function isFood() {
+      return signedIn() && userData().role == "food";
+    }
+
+    function isTeacher() {
+      return signedIn() && userData().role == "teacher";
+    }
+
+    function teacherHasClass(classId) {
+      return isTeacher() && classId in userData().classIds;
+    }
+
+    // Belarus uses UTC+3 year-round. 09:00 Europe/Minsk = 06:00 UTC.
+    // The UI also checks Europe/Minsk explicitly. This rule prevents a teacher
+    // from bypassing the 09:00 lock from the browser.
+    function teacherBeforeDeadline(data) {
+      return teacherHasClass(data.classId)
+        && data.year == request.time.year()
+        && data.month == request.time.month()
+        && data.day == request.time.day()
+        && request.time.hours() < 6;
+    }
+
+    match /users/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /classes/{classId} {
+      allow read: if signedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /settings/{docId} {
+      allow read: if signedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /students/{studentId} {
+      allow read: if isAdmin() || isFood() || (isTeacher() && teacherHasClass(resource.data.classId));
+
+      allow create: if isAdmin() || (isTeacher() && teacherHasClass(request.resource.data.classId));
+
+      allow update: if isAdmin()
+        || (isTeacher()
+          && teacherHasClass(resource.data.classId)
+          && request.resource.data.classId == resource.data.classId);
+
+      allow delete: if isAdmin();
+    }
+
+    match /dailyRecords/{recordId} {
+      allow read: if isAdmin() || isFood()
+        || (isTeacher() && teacherHasClass(resource.data.classId));
+
+      allow create: if isAdmin() || (isTeacher() && teacherBeforeDeadline(request.resource.data));
+
+      allow update: if isAdmin()
+        || (isTeacher()
+          && teacherBeforeDeadline(resource.data)
+          && request.resource.data.classId == resource.data.classId
+          && request.resource.data.studentId == resource.data.studentId
+          && request.resource.data.dateKey == resource.data.dateKey);
+
+      allow delete: if isAdmin();
+    }
+
+    match /dailySubmissions/{submissionId} {
+      allow read: if isAdmin() || isFood()
+        || (isTeacher() && teacherHasClass(resource.data.classId));
+
+      allow create: if isAdmin() || (isTeacher() && teacherBeforeDeadline(request.resource.data));
+
+      allow update: if isAdmin()
+        || (isTeacher()
+          && teacherBeforeDeadline(resource.data)
+          && request.resource.data.classId == resource.data.classId
+          && request.resource.data.dateKey == resource.data.dateKey);
+
+      allow delete: if isAdmin();
+    }
+
+    match /auditLog/{logId} {
+      allow read: if isAdmin();
+      allow create: if signedIn();
+      allow update, delete: if false;
+    }
+  }
+}
