@@ -171,6 +171,92 @@ window.FOOD_APP = window.FOOD_APP || {};
       }
       await this.log(actor,"students_imported",{count:rows.length});
     }
+
+    async importMigration(data,actor){
+      // Make sure the standard classes exist before resolving class names.
+      await this.seedDefaultClasses();
+      const classList = await this.getClasses();
+      const classMap = new Map(classList.map(c=>[String(c.name).trim().toLowerCase(),c]));
+
+      const normalizeName = v => String(v||"").trim().replace(/\s+/g," ").toLowerCase();
+      const existingStudents = await this.getAllStudents(true);
+      const studentMap = new Map();
+      existingStudents.forEach(st=>{
+        const cls = classList.find(c=>c.id===st.classId);
+        if(cls) studentMap.set(`${cls.name.toLowerCase()}|${normalizeName(st.fullName)}`,st);
+      });
+
+      const studentWrites=[];
+      for(const item of (data.students||[])){
+        const cls=classMap.get(String(item.className||"").trim().toLowerCase());
+        if(!cls) throw new Error(`Не найден класс ${item.className}`);
+        const key=`${cls.name.toLowerCase()}|${normalizeName(item.fullName)}`;
+        let st=studentMap.get(key);
+        if(st){
+          st={...st,classId:cls.id,lunchCategory:item.lunchCategory||null,snackCategory:item.snackCategory||null,status:"active"};
+          studentMap.set(key,st);
+          studentWrites.push({ref:this.db.collection("students").doc(st.id),data:{
+            fullName:item.fullName,classId:cls.id,lunchCategory:item.lunchCategory||null,
+            snackCategory:item.snackCategory||null,status:"active",updatedAt:this.FieldValue.serverTimestamp()
+          }});
+        }else{
+          const ref=this.db.collection("students").doc();
+          st={id:ref.id,fullName:item.fullName,classId:cls.id,lunchCategory:item.lunchCategory||null,snackCategory:item.snackCategory||null,status:"active"};
+          studentMap.set(key,st);
+          studentWrites.push({ref,data:{
+            fullName:item.fullName,classId:cls.id,lunchCategory:item.lunchCategory||null,
+            snackCategory:item.snackCategory||null,status:"active",
+            createdAt:this.FieldValue.serverTimestamp(),updatedAt:this.FieldValue.serverTimestamp()
+          }});
+        }
+      }
+
+      const commitWrites = async (writes) => {
+        for(let i=0;i<writes.length;i+=400){
+          const batch=this.db.batch();
+          writes.slice(i,i+400).forEach(w=>batch.set(w.ref,w.data,{merge:true}));
+          await batch.commit();
+        }
+      };
+      await commitWrites(studentWrites);
+
+      const recordWrites=[];
+      for(const r of (data.records||[])){
+        const cls=classMap.get(String(r.className||"").trim().toLowerCase());
+        if(!cls) continue;
+        const st=studentMap.get(`${cls.name.toLowerCase()}|${normalizeName(r.fullName)}`);
+        if(!st) continue;
+        const parts=parseDateKey(r.dateKey);
+        const ref=this.db.collection("dailyRecords").doc(`${r.dateKey}_${st.id}`);
+        recordWrites.push({ref,data:{
+          dateKey:r.dateKey,...parts,studentId:st.id,studentName:st.fullName,classId:cls.id,
+          lunchCategory:r.lunchCategory||st.lunchCategory||null,
+          snackCategory:r.snackCategory||st.snackCategory||null,
+          lunchStatus:r.lunchStatus||"none",snackStatus:r.snackStatus||"none",
+          updatedBy:actor.id,updatedAt:this.FieldValue.serverTimestamp(),migrated:true
+        }});
+      }
+      await commitWrites(recordWrites);
+
+      const submissionWrites=[];
+      for(const sub of (data.submissions||[])){
+        const cls=classMap.get(String(sub.className||"").trim().toLowerCase());
+        if(!cls) continue;
+        const parts=parseDateKey(sub.dateKey);
+        const ref=this.db.collection("dailySubmissions").doc(`${sub.dateKey}_${cls.id}`);
+        submissionWrites.push({ref,data:{
+          dateKey:sub.dateKey,...parts,classId:cls.id,submittedBy:actor.id,
+          submittedByName:"Перенос из старых таблиц",
+          submittedAt:this.FieldValue.serverTimestamp(),updatedAt:this.FieldValue.serverTimestamp(),migrated:true
+        }});
+      }
+      await commitWrites(submissionWrites);
+      await this.log(actor,"history_migrated",{
+        students:(data.students||[]).length,records:(data.records||[]).length,
+        submissions:(data.submissions||[]).length,period:data.period||null
+      });
+      return {students:(data.students||[]).length,records:(data.records||[]).length};
+    }
     async getUserProfiles(){
       const s=await this.db.collection("users").get();
       return s.docs.map(d=>({id:d.id,...d.data()}));
@@ -247,6 +333,30 @@ window.FOOD_APP = window.FOOD_APP || {};
     async submitClass(dateKey,classId){const rid=`${dateKey}_${classId}`,idx=this.data.submissions.findIndex(x=>x.id===rid);const s={id:rid,dateKey,classId,submittedAt:new Date().toISOString()};if(idx>=0)this.data.submissions[idx]=s;else this.data.submissions.push(s);this.save()}
     async getSubmissions(dateKey,classId=null){return this.data.submissions.filter(x=>x.dateKey===dateKey&&(!classId||x.classId===classId))}
     async importStudents(rows){rows.forEach(r=>this.data.students.push({...r,id:id(),status:"active"}));this.save()}
+
+    async importMigration(data){
+      await this.seedDefaultClasses();
+      const normalizeName=v=>String(v||"").trim().replace(/\s+/g," ").toLowerCase();
+      for(const item of (data.students||[])){
+        const cls=this.data.classes.find(c=>String(c.name).toLowerCase()===String(item.className).toLowerCase());
+        if(!cls) continue;
+        let st=this.data.students.find(x=>x.classId===cls.id&&normalizeName(x.fullName)===normalizeName(item.fullName));
+        if(st){Object.assign(st,{lunchCategory:item.lunchCategory||null,snackCategory:item.snackCategory||null,status:"active"});}
+        else{st={id:id(),fullName:item.fullName,classId:cls.id,lunchCategory:item.lunchCategory||null,snackCategory:item.snackCategory||null,status:"active"};this.data.students.push(st);}
+      }
+      for(const r of (data.records||[])){
+        const cls=this.data.classes.find(c=>String(c.name).toLowerCase()===String(r.className).toLowerCase());if(!cls)continue;
+        const st=this.data.students.find(x=>x.classId===cls.id&&normalizeName(x.fullName)===normalizeName(r.fullName));if(!st)continue;
+        const parts=parseDateKey(r.dateKey),rid=`${r.dateKey}_${st.id}`,idx=this.data.records.findIndex(x=>x.id===rid);
+        const rec={id:rid,dateKey:r.dateKey,...parts,studentId:st.id,studentName:st.fullName,classId:cls.id,lunchCategory:r.lunchCategory||st.lunchCategory||null,snackCategory:r.snackCategory||st.snackCategory||null,lunchStatus:r.lunchStatus||"none",snackStatus:r.snackStatus||"none",migrated:true};
+        if(idx>=0)this.data.records[idx]=rec;else this.data.records.push(rec);
+      }
+      for(const sub of (data.submissions||[])){
+        const cls=this.data.classes.find(c=>String(c.name).toLowerCase()===String(sub.className).toLowerCase());if(!cls)continue;
+        const rid=`${sub.dateKey}_${cls.id}`;if(!this.data.submissions.some(x=>x.id===rid))this.data.submissions.push({id:rid,dateKey:sub.dateKey,classId:cls.id,migrated:true});
+      }
+      this.save();return {students:(data.students||[]).length,records:(data.records||[]).length};
+    }
     async getUserProfiles(){return this.data.users}
     async saveUserProfile(d){const i=this.data.users.findIndex(x=>x.id===d.id);if(i>=0)this.data.users[i]={...this.data.users[i],...d};else this.data.users.push(d);this.save()}
     async log(){}

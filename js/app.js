@@ -419,18 +419,28 @@ window.FOOD_APP = window.FOOD_APP || {};
   }
 
   async function renderImport(){
-    setTitle("Импорт учащихся","Загрузка списка из Excel");
-    $("#content").innerHTML=`<div class="card"><div class="card-body">
-      <div class="notice"><b>Ожидаемые колонки:</b> ФИО, Класс, Обед, Полдник. Можно указывать полное название категории, короткий код (например, «О МН (2)») или номер.</div>
-      <div class="page-actions"><input id="importFile" type="file" accept=".xlsx,.xls,.csv"><button id="downloadTemplate" class="btn btn-secondary">Скачать шаблон</button></div>
-      <div id="importPreview"></div>
-    </div></div>`;
+    setTitle("Импорт данных","Учащиеся и перенос заполненной истории");
+    $("#content").innerHTML=`
+      <div class="card"><div class="card-header"><h3>Импорт учащихся</h3></div><div class="card-body">
+        <div class="notice"><b>Ожидаемые колонки:</b> ФИО, Класс, Обед, Полдник. Можно указывать полное название категории, короткий код (например, «О МН (2)») или номер.</div>
+        <div class="page-actions"><input id="importFile" type="file" accept=".xlsx,.xls,.csv"><button id="downloadTemplate" class="btn btn-secondary">Скачать шаблон</button></div>
+        <div id="importPreview"></div>
+      </div></div>
+      <div class="card"><div class="card-header"><h3>Перенос данных из старых таблиц</h3></div><div class="card-body">
+        <div class="notice success"><b>Одноразовая миграция:</b> файл переноса может сразу создать/обновить учащихся, перенести категории и уже заполненные дни в месячную ведомость и сводную.</div>
+        <div class="notice warning">Старые таблицы не различают «отсутствует» и «не питается». Пустая ячейка за прошедший учебный день переносится как <b>«не питается»</b>.</div>
+        <div class="page-actions"><input id="historyImportFile" type="file" accept=".json"></div>
+        <div id="historyImportPreview"></div>
+      </div></div>`;
     $("#downloadTemplate").onclick=downloadImportTemplate;
     $("#importFile").onchange=handleImportFile;
+    $("#historyImportFile").onchange=handleHistoryImportFile;
   }
   let importRows=[];
   async function handleImportFile(e){
     const f=e.target.files[0];if(!f)return;
+    await Service.seedDefaultClasses();
+    classes=await Service.getClasses();
     const data=await f.arrayBuffer(), wb=XLSX.read(data,{type:"array"}), ws=wb.Sheets[wb.SheetNames[0]], rows=XLSX.utils.sheet_to_json(ws,{defval:""});
     importRows=[];const errors=[];
     rows.forEach((r,i)=>{
@@ -446,6 +456,43 @@ window.FOOD_APP = window.FOOD_APP || {};
       ${importRows.length?`<div class="table-wrap"><table><thead><tr><th>ФИО</th><th>Класс</th><th>Обед</th><th>Полдник</th></tr></thead><tbody>${importRows.slice(0,20).map(r=>`<tr><td>${esc(r.fullName)}</td><td>${esc(classById(r.classId)?.name)}</td><td>${esc(catShort(r.lunchCategory))}</td><td>${esc(catShort(r.snackCategory))}</td></tr>`).join("")}</tbody></table></div><button id="confirmImport" class="btn btn-primary" style="margin-top:14px">Импортировать ${importRows.length}</button>`:""}`;
     if($("#confirmImport"))$("#confirmImport").onclick=async()=>{if(!confirm(`Добавить ${importRows.length} учащихся в базу?`))return;await Service.importStudents(importRows,profile);toast("Импорт завершён");$("#importPreview").innerHTML=`<div class="notice success">Импортировано: ${importRows.length}</div>`};
   }
+
+  async function handleHistoryImportFile(e){
+    const f=e.target.files[0];if(!f)return;
+    const box=$("#historyImportPreview");
+    try{
+      const text=await f.text(), data=JSON.parse(text);
+      if(!data || data.version!==1 || !Array.isArray(data.students) || !Array.isArray(data.records)){
+        throw new Error("Это не файл миграции питания.");
+      }
+      const classSet=new Set((data.students||[]).map(x=>x.className));
+      const dates=(data.records||[]).map(x=>x.dateKey).sort();
+      box.innerHTML=`<div class="notice">
+        <b>Файл готов к переносу.</b><br>
+        Учащихся: <b>${data.students.length}</b><br>
+        Классов: <b>${classSet.size}</b><br>
+        Дневных записей: <b>${data.records.length}</b><br>
+        Период: <b>${esc(data.period?.from||dates[0]||"—")} — ${esc(data.period?.to||dates[dates.length-1]||"—")}</b>
+      </div>
+      <button id="confirmHistoryImport" class="btn btn-primary">Перенести данные в Firebase</button>`;
+      $("#confirmHistoryImport").onclick=async()=>{
+        if(!confirm(`Перенести ${data.students.length} учащихся и ${data.records.length} дневных записей? Повторный запуск безопасен: записи обновятся, а не продублируются.`))return;
+        const btn=$("#confirmHistoryImport");btn.disabled=true;btn.textContent="Переносим данные…";
+        try{
+          const result=await Service.importMigration(data,profile);
+          classes=await Service.getClasses();
+          box.innerHTML=`<div class="notice success"><b>Готово.</b> Учащиеся: ${result.students}. Дневные записи: ${result.records}. Данные уже доступны в «Месяц» и «Сводная».</div>`;
+          toast("История питания перенесена");
+        }catch(err){
+          console.error(err);
+          box.innerHTML=`<div class="notice danger"><b>Ошибка переноса:</b> ${esc(err.message)}</div>`;
+        }
+      };
+    }catch(err){
+      box.innerHTML=`<div class="notice danger"><b>Не удалось прочитать файл:</b> ${esc(err.message)}</div>`;
+    }
+  }
+
   function normalizeCategory(v,list){
     const s=String(v??"").trim().toLowerCase();if(!s||s==="не получает"||s==="нет")return null;
     for(const c of list){
