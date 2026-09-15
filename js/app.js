@@ -173,6 +173,7 @@ window.FOOD_APP = window.FOOD_APP || {};
       if(r==="dashboard") await renderDashboard();
       else if(r==="classes") await renderClasses();
       else if(r==="summary" && ["admin","food"].includes(profile.role)) await renderSummary();
+      else if(r==="teachers" && ["admin","food"].includes(profile.role)) await renderTeachers();
       else if(r==="reports" && ["admin","food"].includes(profile.role)) await renderReports();
       else if(r==="import" && profile.role==="admin") await renderImport();
       else if(r==="admin" && profile.role==="admin") await renderAdmin();
@@ -469,6 +470,51 @@ window.FOOD_APP = window.FOOD_APP || {};
       const header=["Педагог",...dates.map(d=>Number(d.slice(-2))),"Итого"];
       const aoa=[[`Педагоги — обеды за ${month}`],header,...teachers.map(t=>{const vals=dates.map(d=>map.get(`${t.id}_${d}`)?.status==="eating"?"✓":"—");return [t.displayName||t.username||"",...vals,vals.filter(v=>v==="✓").length]})];
       aoaToBook(`Педагоги_обеды_${month}.xlsx`,{"Обеды":aoa});
+    };
+  }
+
+  async function renderTeachers(){
+    setTitle("Педагоги","Учёт обедов педагогов по дням выбранного месяца");
+    const month=selectedMonth||todayKey().slice(0,7);
+    const [y,m]=month.split("-").map(Number);
+    const days=new Date(y,m,0).getDate();
+    const start=`${month}-01`, end=`${month}-${String(days).padStart(2,"0")}`;
+    const [profiles,records]=await Promise.all([Service.getUserProfiles(),Service.getTeacherMealsBetween(start,end)]);
+    const teachers=profiles.filter(u=>u.role==="teacher" && u.active!==false).sort((a,b)=>(a.displayName||a.username||"").localeCompare(b.displayName||b.username||"","ru"));
+    const map=new Map(records.map(r=>[`${r.userId}_${r.dateKey}`,r]));
+    const totals=teachers.map(t=>({t,n:Array.from({length:days},(_,i)=>map.get(`${t.id}_${month}-${String(i+1).padStart(2,"0")}`)?.status==="eating"?1:0).reduce((a,b)=>a+b,0)}));
+    const dayTotals=Array.from({length:days},(_,i)=>teachers.reduce((n,t)=>n+(map.get(`${t.id}_${month}-${String(i+1).padStart(2,"0")}`)?.status==="eating"?1:0),0));
+    const grand=dayTotals.reduce((a,b)=>a+b,0);
+    const weekdays=Array.from({length:days},(_,i)=>new Date(y,m-1,i+1).getDay());
+    const isWeekend=d=>d===0||d===6;
+    const headers=Array.from({length:days},(_,i)=>`<th class="day ${isWeekend(weekdays[i])?"weekend":""}">${i+1}</th>`).join("");
+    const rows=teachers.map(t=>{
+      const cells=Array.from({length:days},(_,i)=>{const key=`${t.id}_${month}-${String(i+1).padStart(2,"0")}`,r=map.get(key);return `<td class="num ${isWeekend(weekdays[i])?"weekend":""}">${r?.status==="eating"?"✓":r?.status==="not_eating"?"—":""}</td>`}).join("");
+      const total=totals.find(x=>x.t.id===t.id)?.n||0;
+      return `<tr><td><b>${esc(t.displayName||t.username||"Без имени")}</b><div class="muted" style="font-size:11px">${esc(t.username||"")}</div></td>${cells}<td class="num"><b>${total}</b></td></tr>`;
+    }).join("");
+    const avg=teachers.length?(grand/teachers.length).toFixed(1):"0";
+    const noTeachers=!teachers.length;
+    const dayTotalCells=dayTotals.map((n,i)=>`<td class="num ${isWeekend(weekdays[i])?"weekend":""}"><b>${n||""}</b></td>`).join("");
+    const html=`
+      <div class="page-actions">
+        <div class="field compact"><span>Месяц</span><input id="teachersMonth" type="month" value="${month}"></div>
+        <div class="notice success" style="margin:0">Всего обедов: <b>${grand}</b> · Педагогов: <b>${teachers.length}</b> · Среднее: <b>${avg}</b> на педагога</div>
+        <button id="exportTeachers" class="btn btn-secondary">⇩ Excel</button>
+      </div>
+      ${noTeachers?`<div class="card"><div class="empty"><strong>Педагоги не найдены</strong><span>Зарегистрированные педагоги появятся здесь.</span></div></div>`:`
+      <div class="card">
+        <div class="card-header"><h3>Обеды педагогов — ${String(m).padStart(2,"0")}.${y}</h3><span class="muted">✓ — будут обедать · — — не будут</span></div>
+        <div class="table-wrap"><table class="summary-table teacher-summary"><thead><tr><th style="min-width:220px">Педагог</th>${headers}<th class="day">Итого</th></tr></thead><tbody>${rows}<tr><td class="total-lunch"><b>ИТОГО ЗА ДЕНЬ</b></td>${dayTotalCells}<td class="num total-lunch"><b>${grand}</b></td></tr></tbody></table></div>
+      </div>`}`;
+    $("#content").innerHTML=html;
+    $("#teachersMonth").onchange=e=>{selectedMonth=e.target.value;renderTeachers()};
+    if($("#exportTeachers")) $("#exportTeachers").onclick=()=>{
+      const header=["Педагог",...Array.from({length:days},(_,i)=>i+1),"Итого"];
+      const sheet=[[`Обеды педагогов за ${String(m).padStart(2,"0")}.${y}`],header];
+      teachers.forEach(t=>{const vals=Array.from({length:days},(_,i)=>map.get(`${t.id}_${month}-${String(i+1).padStart(2,"0")}`)?.status==="eating"?"✓":"");sheet.push([t.displayName||t.username||"",...vals,vals.filter(Boolean).length])});
+      sheet.push(["ИТОГО ЗА ДЕНЬ",...dayTotals,grand]);
+      aoaToBook(`Педагоги_обеды_${month}.xlsx`,{"Педагоги":sheet});
     };
   }
 

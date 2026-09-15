@@ -144,3 +144,4 @@ hr{border:0;border-top:1px solid var(--border);margin:20px 0}
   .login-card{padding:25px 20px}
   .page-actions{align-items:stretch}.field{width:100%}
 }
+.teacher-summary th.day,.teacher-summary td.num{min-width:38px;text-align:center}.teacher-summary .weekend{background:#f5f6f5}.teacher-summary td:first-child{position:sticky;left:0;background:#fff;z-index:1}.teacher-summary th:first-child{position:sticky;left:0;z-index:3}
