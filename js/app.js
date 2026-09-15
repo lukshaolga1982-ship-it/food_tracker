@@ -105,6 +105,24 @@ window.FOOD_APP = window.FOOD_APP || {};
         $("#loginError").classList.remove("hidden");
       }
     });
+    const regBtn=$("#teacherRegisterBtn");
+    if(regBtn) regBtn.onclick=()=>teacherRegistrationModal();
+  }
+
+  function teacherRegistrationModal(){
+    showModal("Регистрация педагога",`<div class="form-grid">
+      <label><span>Логин</span><input id="rUsername" placeholder="например, ivanova"></label>
+      <label><span>Отображаемое имя</span><input id="rDisplayName" placeholder="Имя Фамилия"></label>
+      <label><span>Пароль</span><input id="rPassword" type="password" placeholder="не менее 6 символов"></label>
+      <label><span>Повторите пароль</span><input id="rPassword2" type="password"></label>
+      <div class="full notice">После регистрации педагог сможет войти в систему, но доступ к классам назначит администратор.</div>
+    </div>`,async()=>{
+      const p=$("#rPassword").value,p2=$("#rPassword2").value;
+      if(p!==p2){toast("Пароли не совпадают","error");return false}
+      const user=await Service.registerTeacher($("#rUsername").value,$("#rPassword").value,$("#rDisplayName").value);
+      toast("Регистрация выполнена. Роль: педагог. Администратор назначит классы.");
+      return true;
+    });
   }
 
   async function enterApp(user){
@@ -364,7 +382,7 @@ window.FOOD_APP = window.FOOD_APP || {};
     bindStudentActions(students,canManage);
   }
   function studentRows(students,canManage){
-    return students.map(s=>`<tr><td><b>${esc(s.fullName)}</b></td><td>${esc(catShort(s.lunchCategory))}${catName(s.lunchCategory)?`<div class="student-meta">${esc(catName(s.lunchCategory))}</div>`:""}</td><td>${s.snackCategory?esc(catShort(s.snackCategory)):"—"}${catName(s.snackCategory)?`<div class="student-meta">${esc(catName(s.snackCategory))}</div>`:""}</td><td>${s.status==="withdrawn"?`<span class="status off">Выбыл</span>`:`<span class="status ok">Активен</span>`}</td><td><div class="actions">${canManage?`<button class="btn btn-sm btn-secondary" data-edit-student="${s.id}">Изменить</button>${profile.role==="admin"?`<button class="btn btn-sm btn-secondary" data-transfer="${s.id}">Перевести</button>`:""}${s.status!=="withdrawn"?`<button class="btn btn-sm btn-danger" data-withdraw="${s.id}">Выбыл</button>`:""}`:""}</div></td></tr>`).join("")||`<tr><td colspan="5"><div class="empty">Нет учащихся</div></td></tr>`;
+    return students.map(s=>`<tr><td><b>${esc(s.fullName)}</b>${s.dietary?`<div class="student-meta">Диетическое питание</div>`:""}</td><td>${esc(catShort(s.lunchCategory))}${catName(s.lunchCategory)?`<div class="student-meta">${esc(catName(s.lunchCategory))}</div>`:""}</td><td>${s.snackCategory?esc(catShort(s.snackCategory)):"—"}${catName(s.snackCategory)?`<div class="student-meta">${esc(catName(s.snackCategory))}</div>`:""}</td><td>${s.status==="withdrawn"?`<span class="status off">Выбыл</span>`:`<span class="status ok">Активен</span>`}</td><td><div class="actions">${canManage?`<button class="btn btn-sm btn-secondary" data-edit-student="${s.id}">Изменить</button>${profile.role==="admin"?`<button class="btn btn-sm btn-secondary" data-transfer="${s.id}">Перевести</button>`:""}${s.status!=="withdrawn"?`<button class="btn btn-sm btn-danger" data-withdraw="${s.id}">Выбыл</button>`:""}`:""}</div></td></tr>`).join("")||`<tr><td colspan="5"><div class="empty">Нет учащихся</div></td></tr>`;
   }
   function bindStudentActions(students,canManage){
     if(!canManage)return;
@@ -379,10 +397,11 @@ window.FOOD_APP = window.FOOD_APP || {};
         <label class="full"><span>ФИО</span><input id="mFullName" value="${esc(s?.fullName||"")}" placeholder="Фамилия Имя" required></label>
         <label><span>Категория обеда</span><select id="mLunch">${categoryOptions(C.LUNCH_CATEGORIES,s?.lunchCategory)}</select></label>
         <label><span>Категория полдника</span><select id="mSnack">${categoryOptions(C.SNACK_CATEGORIES,s?.snackCategory)}</select></label>
+        <label class="full" style="display:flex;align-items:center;gap:10px"><input id="mDietary" class="checkbox" type="checkbox" ${s?.dietary?"checked":""}> <span>Получает диетическое питание</span></label>
       </div>`,
       async()=>{
         const fullName=$("#mFullName").value.trim();if(!fullName){toast("Введите ФИО","error");return false}
-        await Service.saveStudent({...(s||{}),fullName,classId:currentClassId,lunchCategory:$("#mLunch").value||null,snackCategory:$("#mSnack").value||null,status:s?.status||"active"},profile);
+        await Service.saveStudent({...(s||{}),fullName,classId:currentClassId,lunchCategory:$("#mLunch").value||null,snackCategory:$("#mSnack").value||null,dietary:$("#mDietary").checked,status:s?.status||"active"},profile);
         toast(s?"Данные обновлены":"Учащийся добавлен");await renderClassStudents();return true;
       });
   }
@@ -413,15 +432,59 @@ window.FOOD_APP = window.FOOD_APP || {};
   function countTotal(records,day,meal){return records.filter(r=>r.day===day&&r[meal+"Status"]==="eating").length}
 
   async function renderReports(){
-    setTitle("Отчёты","Экспорт данных в Excel");
-    $("#content").innerHTML=`<div class="two-col">
-      <div class="card"><div class="card-header"><h3>Сводная ведомость за месяц</h3></div><div class="card-body"><div class="field"><span>Месяц</span><input id="reportMonth" type="month" value="${selectedMonth}"></div><p class="muted" style="margin:12px 0">По каждому классу: категории обеда и полдника, дни месяца и итоговые строки.</p><button id="reportSummaryBtn" class="btn btn-primary">Скачать .xlsx</button></div></div>
-      <div class="card"><div class="card-header"><h3>База учащихся</h3></div><div class="card-body"><p class="muted" style="margin-bottom:14px">ФИО, класс, категории обеда и полдника, статус.</p><button id="reportStudentsBtn" class="btn btn-secondary">Скачать базу .xlsx</button></div></div>
-      <div class="card"><div class="card-header"><h3>Сводная за день</h3></div><div class="card-body"><div class="field"><span>Дата</span><input id="reportDay" type="date" value="${selectedDate}"></div><p class="muted" style="margin:12px 0">Количество по категориям и классам на выбранную дату.</p><button id="reportDayBtn" class="btn btn-secondary">Скачать .xlsx</button></div></div>
-    </div>`;
-    $("#reportSummaryBtn").onclick=async()=>{selectedMonth=$("#reportMonth").value;const {y,m,days}=monthBounds(selectedMonth);const r=await Service.getMonthAllRecords(y,m);exportSummaryWorkbook(classes,r,y,m,days)};
-    $("#reportStudentsBtn").onclick=async()=>exportStudentsWorkbook(await Service.getAllStudents(true));
-    $("#reportDayBtn").onclick=async()=>exportDayWorkbook($("#reportDay").value,await Service.getDailyRecords($("#reportDay").value));
+    setTitle("Отчёты","Формирование списочных ведомостей за выбранный период");
+    const today=todayKey();
+    const [ty,tm,td]=today.split("-").map(Number);
+    const monday=(d)=>{const x=new Date(d);const w=(x.getDay()+6)%7;x.setDate(x.getDate()-w);return x};
+    const mon=monday(new Date(ty,tm-1,td));
+    const weekStart=`${mon.getFullYear()}-${String(mon.getMonth()+1).padStart(2,"0")}-${String(mon.getDate()).padStart(2,"0")}`;
+    const month=today.slice(0,7);
+    const defaultStart=weekStart, defaultEnd=today;
+    const periodControls=`<div class="form-grid"><label><span>Период</span><select id="reportPeriod"><option value="day">День</option><option value="week" selected>Неделя</option><option value="month">Месяц</option><option value="custom">Произвольный</option></select></label><label><span>Дата</span><input id="reportDate" type="date" value="${today}"></label><label id="reportMonthWrap" class="hidden"><span>Месяц</span><input id="reportMonth" type="month" value="${month}"></label><label id="reportStartWrap" class="hidden"><span>Начало</span><input id="reportStart" type="date" value="${defaultStart}"></label><label id="reportEndWrap" class="hidden"><span>Конец</span><input id="reportEnd" type="date" value="${defaultEnd}"></label></div>`;
+    $("#content").innerHTML=`<div class="card"><div class="card-header"><h3>Списочные отчёты</h3></div><div class="card-body"><p class="muted">Выберите период и сформируйте Excel. Завтрак соответствует действующей в системе категории «Обед», полдник — категории «Полдник».</p>${periodControls}<div class="page-actions" style="margin-top:14px;flex-wrap:wrap"><button id="makeReportsBtn" class="btn btn-primary">⇩ Все отчёты одним файлом</button><button id="makeParentReportsBtn" class="btn btn-secondary">Родительская плата</button><button id="makeDietReportsBtn" class="btn btn-secondary">Диетическое питание</button><button id="makeBenefit5ReportsBtn" class="btn btn-secondary">Льготные 5А–5Б</button><button id="makeBenefit68ReportsBtn" class="btn btn-secondary">Льготные 6–8</button><button id="makeBenefit911ReportsBtn" class="btn btn-secondary">Льготные 9–11</button></div><div id="reportHint" class="notice" style="margin-top:14px">Можно скачать все отчёты одним файлом или сформировать только нужный вид отдельным Excel-файлом.</div></div></div>`;
+    const updatePeriod=()=>{const v=$("#reportPeriod").value;$("#reportDate").parentElement.classList.toggle("hidden",!['day','week'].includes(v));$("#reportMonthWrap").classList.toggle("hidden",v!=="month");$("#reportStartWrap").classList.toggle("hidden",v!=="custom");$("#reportEndWrap").classList.toggle("hidden",v!=="custom")};
+    $("#reportPeriod").onchange=updatePeriod; updatePeriod();
+    const runReport=async(type)=>{try{const range=getReportRange();if(!range.start||!range.end)throw new Error("Укажите корректный период");if(range.start>range.end)throw new Error("Начало периода не может быть позже конца");const students=await Service.getAllStudents(false);const records=await Service.getRecordsBetween(range.start,range.end);exportRequestedReports(students,records,range,type);toast(type==="all"?"Все отчёты сформированы":"Отчёт сформирован")}catch(e){console.error(e);toast(e.message,"error")}};
+    $("#makeReportsBtn").onclick=()=>runReport("all");
+    $("#makeParentReportsBtn").onclick=()=>runReport("parent");
+    $("#makeDietReportsBtn").onclick=()=>runReport("diet");
+    $("#makeBenefit5ReportsBtn").onclick=()=>runReport("benefit5");
+    $("#makeBenefit68ReportsBtn").onclick=()=>runReport("benefit68");
+    $("#makeBenefit911ReportsBtn").onclick=()=>runReport("benefit911");
+  }
+  function getReportRange(){
+    const mode=$("#reportPeriod").value;
+    if(mode==="day") return {start:$("#reportDate").value,end:$("#reportDate").value,label:`за ${fmtDate($("#reportDate").value)}`};
+    if(mode==="month"){const [y,m]=$("#reportMonth").value.split("-").map(Number);const last=new Date(y,m,0).getDate();return {start:`${y}-${String(m).padStart(2,"0")}-01`,end:`${y}-${String(m).padStart(2,"0")}-${String(last).padStart(2,"0")}`,label:`за ${monthLabel($("#reportMonth").value)}`};}
+    if(mode==="custom") return {start:$("#reportStart").value,end:$("#reportEnd").value,label:`с ${fmtDate($("#reportStart").value)} по ${fmtDate($("#reportEnd").value)}`};
+    const d=new Date($("#reportDate").value+"T12:00:00"),w=(d.getDay()+6)%7,s=new Date(d);s.setDate(d.getDate()-w);const e=new Date(s);e.setDate(s.getDate()+6);const k=x=>`${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,"0")}-${String(x.getDate()).padStart(2,"0")}`;return {start:k(s),end:k(e),label:`с ${fmtDate(k(s))} по ${fmtDate(k(e))}`};
+  }
+  function dateList(start,end){const out=[];for(let d=new Date(start+"T12:00:00"),e=new Date(end+"T12:00:00");d<=e;d.setDate(d.getDate()+1))out.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`);return out}
+  function studentMealForDay(s,recordsMap,date,meal){const r=recordsMap.get(`${s.id}_${date}`);const status=r?.[meal+"Status"]||(s[meal+"Category"]?"eating":"none");return status==="eating"?true:false}
+  function listReportSheet(title,students,records,dates,meal,filterFn){const rm=new Map(records.map(r=>[`${r.studentId}_${r.dateKey}`,r]));const rows=[[title],["ФИО","Класс",...dates.map(fmtDate),"Итого"]];students.filter(filterFn).sort((a,b)=>String(a.fullName).localeCompare(String(b.fullName),"ru")).forEach(s=>{const vals=dates.map(d=>studentMealForDay(s,rm,d,meal)?"✓":"");rows.push([s.fullName,classById(s.classId)?.name||s.classId,...vals,vals.filter(Boolean).length])});return rows}
+  function exportRequestedReports(students,records,range,type="all"){
+    const dates=dateList(range.start,range.end),sheets={};
+    const addParent=()=>classes.forEach(cls=>{
+      const ss=students.filter(s=>s.classId===cls.id&&s.lunchCategory==="O");
+      sheets[`${cls.name} Завтраки`]=listReportSheet(`${cls.name} — завтраки за родительскую плату ${range.label}`,ss,records,dates,"lunch",()=>true);
+      sheets[`${cls.name} Полдники`]=listReportSheet(`${cls.name} — полдники за родительскую плату ${range.label}`,students.filter(s=>s.classId===cls.id&&s.snackCategory==="P"),records,dates,"snack",()=>true);
+    });
+    const addDiet=()=>{
+      const diet=students.filter(s=>s.dietary);
+      sheets["Диеты Завтраки"]=listReportSheet(`Диетическое питание — завтраки ${range.label}`,diet,records,dates,"lunch",()=>true);
+      sheets["Диеты Полдники"]=listReportSheet(`Диетическое питание — полдники ${range.label}`,diet,records,dates,"snack",()=>true);
+    };
+    const addBenefits=(g)=>{
+      const base=students.filter(s=>g.ids.includes(s.classId));
+      sheets[`Льготные ${g.name} Завтрак`]=listReportSheet(`Льготные — ${g.name} — завтраки ${range.label}`,base,records,dates,"lunch",s=>s.lunchCategory&&s.lunchCategory!=="O");
+      sheets[`Льготные ${g.name} Полдник`]=listReportSheet(`Льготные — ${g.name} — полдники ${range.label}`,base,records,dates,"snack",s=>s.snackCategory&&s.snackCategory!=="P");
+    };
+    const groups={benefit5:{name:"5А–5Б",ids:["5a","5b"]},benefit68:{name:"6–8",ids:["6a","6b","7a","7b","8a","8b"]},benefit911:{name:"9–11",ids:["9","10","11"]}};
+    if(type==="all"||type==="parent")addParent();
+    if(type==="all"||type==="diet")addDiet();
+    if(type==="all"||groups[type])addBenefits(groups[type]);
+    const suffix=type==="all"?"все":type;
+    aoaToBook(`Питание_${suffix}_${range.start}_${range.end}.xlsx`,sheets);
   }
 
   async function renderImport(){
@@ -525,7 +588,7 @@ window.FOOD_APP = window.FOOD_APP || {};
 
       <div class="card"><div class="card-header"><h3>Профили пользователей</h3><button id="addProfileBtn" class="btn btn-sm btn-primary">+ Профиль</button></div>
         <div class="card-body"><div class="notice warning"><b>Важно:</b> аккаунт с логином и паролем сначала создаётся в Firebase Authentication. Здесь к его UID привязываются роль и классы.</div></div>
-        <div class="table-wrap"><table><thead><tr><th>Имя</th><th>Логин</th><th>Роль</th><th>Классы</th><th></th></tr></thead><tbody>${users.map(u=>`<tr><td>${esc(u.displayName||"")}</td><td>${esc(u.username||"")}</td><td>${esc(C.ROLE_LABELS[u.role]||u.role)}</td><td>${(u.classIds||[]).map(id=>esc(classById(id)?.name||id)).join(", ")||"—"}</td><td><button class="btn btn-sm btn-secondary" data-edit-user="${u.id}">Изменить</button></td></tr>`).join("")}</tbody></table></div>
+        <div class="table-wrap"><table><thead><tr><th>Имя</th><th>Логин</th><th>Роль</th><th>Классы</th><th></th></tr></thead><tbody>${users.map(u=>`<tr><td>${esc(u.displayName||"")}</td><td>${esc(u.username||"")}</td><td>${esc(C.ROLE_LABELS[u.role]||u.role)}</td><td>${(u.classIds||[]).map(id=>esc(classById(id)?.name||id)).join(", ")||"—"}</td><td><button class="btn btn-sm btn-secondary" data-edit-user="${u.id}">Изменить</button>${u.id!==profile.id?`<button class="btn btn-sm btn-danger" data-delete-user="${u.id}">Удалить</button>`:""}</td></tr>`).join("")}</tbody></table></div>
       </div>`;
     $("#saveSettingsBtn").onclick=async()=>{await Service.saveSettings({academicYear:$("#setYear").value.trim(),editDeadline:$("#setDeadline").value,timezone:window.APP_CONFIG.timezone});settings=await Service.getSettings();toast("Настройки сохранены")};
     if($("#seedClassesBtn"))$("#seedClassesBtn").onclick=async()=>{await Service.seedDefaultClasses();classes=await Service.getClasses();toast("Классы созданы");renderAdmin()};

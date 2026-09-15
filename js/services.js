@@ -296,6 +296,25 @@ window.FOOD_APP = window.FOOD_APP || {};
       const payload={...data}; const uid=payload.id; delete payload.id;
       await this.db.collection("users").doc(uid).set({...payload,updatedAt:this.FieldValue.serverTimestamp()},{merge:true});
     }
+    async deleteUserProfile(uid,actor){
+      await this.db.collection("users").doc(uid).delete();
+      await this.log(actor,"user_deleted",{userId:uid});
+    }
+    async registerTeacher(username,password,displayName){
+      const raw=String(username||"").trim().toLowerCase();
+      if(!raw || !password || !displayName) throw new Error("Заполните все поля");
+      const email=raw.includes("@")?raw:`${raw}@${window.APP_CONFIG.usernameDomain}`;
+      const cred=await this.auth.createUserWithEmailAndPassword(email,password);
+      await this.db.collection("users").doc(cred.user.uid).set({
+        username:raw,displayName:displayName.trim(),role:"teacher",classIds:[],active:true,
+        selfRegistered:true,createdAt:this.FieldValue.serverTimestamp(),updatedAt:this.FieldValue.serverTimestamp()
+      });
+      return cred.user;
+    }
+    async getRecordsBetween(startDate,endDate){
+      const s=await this.db.collection("dailyRecords").where("dateKey",">=",startDate).where("dateKey","<=",endDate).get();
+      return s.docs.map(d=>({id:d.id,...d.data()}));
+    }
     async log(actor,action,details){
       try{
         await this.db.collection("auditLog").add({
@@ -413,6 +432,8 @@ window.FOOD_APP = window.FOOD_APP || {};
     }
     async getUserProfiles(){return this.data.users}
     async saveUserProfile(d){const i=this.data.users.findIndex(x=>x.id===d.id);if(i>=0)this.data.users[i]={...this.data.users[i],...d};else this.data.users.push(d);this.save()}
+    async deleteUserProfile(uid){this.data.users=this.data.users.filter(x=>x.id!==uid);this.save()}
+    async getRecordsBetween(startDate,endDate){return this.data.records.filter(r=>r.dateKey>=startDate&&r.dateKey<=endDate)}
     async log(){}
   }
 

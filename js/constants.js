@@ -28,7 +28,7 @@ FOOD_APP.DEFAULT_CLASSES = [
 
 FOOD_APP.ROLE_LABELS = {
   admin: "Администратор",
-  teacher: "Классный руководитель",
+  teacher: "Педагог",
   food: "Ответственный за питание"
 };
 
