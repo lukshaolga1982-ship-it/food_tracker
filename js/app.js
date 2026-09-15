@@ -342,12 +342,12 @@ window.FOOD_APP = window.FOOD_APP || {};
         ?`<div class="deadline-banner open"><div><b>${submitted?"✓ Сведения переданы — можно исправлять до "+deadline:"Редактирование открыто до "+deadline}</b><div class="muted">${submitted?"После изменения отметок нажмите «Обновить сведения».":"Текущий день: "+fmtDate(selectedDate)}</div></div>${submitted?`<span class="status ok">✓ Передано</span>`:""}</div>`
         :`<div class="deadline-banner locked"><div><b>🔒 Редактирование закрыто</b><div class="muted">${isPast?"Прошедшие дни доступны только для просмотра.":isFuture?"Будущие дни пока доступны только для просмотра.":"Сегодня редактирование закрыто после "+deadline+"."}</div></div></div>`;
     }else{
-      banner=`<div class="deadline-banner ${profile.role==="admin"?"open":"locked"}"><div><b>${profile.role==="admin"?"Режим администратора":"Режим просмотра"}</b><div class="muted">${profile.role==="admin"?"Администратор может исправлять данные после дедлайна; изменение попадёт в журнал.":"Ответственный за питание просматривает сведения без изменения."}</div></div></div>`;
+      banner=`<div class="deadline-banner ${profile.role==="admin"?"open":"locked"}"><div><b>${profile.role==="admin"?"Режим администратора":"Режим просмотра"}</b><div class="muted">${profile.role==="admin"?"Администратор может исправлять данные в любое время. После исправления нажмите «Обновить сведения».":"Ответственный за питание просматривает сведения без изменения."}</div></div></div>`;
     }
     body.innerHTML=`${banner}
       ${editable?`<div class="bulk-bar"><input id="selectAllStudents" class="checkbox" type="checkbox"><b>Массово:</b><button class="btn btn-sm btn-secondary" data-bulk="eating">✓ Питаются</button><button class="btn btn-sm btn-secondary" data-bulk="absent">Н Отсутствуют</button><button class="btn btn-sm btn-secondary" data-bulk="not_eating">– Не питаются</button></div>`:""}
       <div class="student-list">${students.map(s=>studentDailyRow(s,map.get(s.id),editable)).join("")||`<div class="empty"><strong>Нет учащихся</strong>Добавьте учащихся во вкладке «Учащиеся».</div>`}</div>
-      ${profile.role==="teacher"&&editable?`<div style="margin-top:16px;display:flex;justify-content:flex-end"><button id="submitClassBtn" class="btn btn-primary">${submitted?"✓ Обновить сведения":"✓ Сведения переданы"}</button></div>`:""}`;
+      ${((profile.role==="teacher"&&editable)||profile.role==="admin")?`<div style="margin-top:16px;display:flex;justify-content:flex-end"><button id="submitClassBtn" class="btn btn-primary">${submitted?"✓ Обновить сведения":"✓ Сведения переданы"}</button></div>`:""}`;
     bindDailyControls(students,map,editable);
     if($("#submitClassBtn"))$("#submitClassBtn").onclick=async()=>{
       const result=await Service.submitClass(selectedDate,currentClassId,profile);
@@ -387,7 +387,7 @@ window.FOOD_APP = window.FOOD_APP || {};
       }catch(e){
         const msg=String(e?.message||e);
         toast(msg.toLowerCase().includes("permission")
-          ?"Firebase не разрешил изменение. Проверьте опубликованные Firestore Rules и время редактирования (до 09:00)."
+          ?"Firebase не разрешил изменение. Администратору нужно опубликовать актуальные Firestore Rules; классному руководителю редактирование доступно только до 09:00."
           :msg,"error");
       }
     });

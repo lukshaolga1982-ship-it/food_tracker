@@ -27,9 +27,8 @@ service cloud.firestore {
       return isTeacher() && classId in userData().classIds;
     }
 
-    // Belarus uses UTC+3 year-round. 09:00 Europe/Minsk = 06:00 UTC.
-    // The UI also checks Europe/Minsk explicitly. This rule prevents a teacher
-    // from bypassing the 09:00 lock from the browser.
+    // 09:00 в Беларуси = 06:00 UTC.
+    // Учитель может менять только сегодняшний день и только до 09:00.
     function teacherBeforeDeadline(data) {
       return teacherHasClass(data.classId)
         && data.year == request.time.year()
@@ -39,8 +38,15 @@ service cloud.firestore {
     }
 
     match /users/{uid} {
-      allow read: if signedIn() && (request.auth.uid == uid || isAdmin() || isFood());
-      allow create: if isAdmin() || (signedIn() && request.auth.uid == uid && request.resource.data.role == "teacher" && request.resource.data.classIds.size() == 0);
+      allow read: if signedIn() &&
+        (request.auth.uid == uid || isAdmin() || isFood());
+
+      allow create: if isAdmin()
+        || (signedIn()
+          && request.auth.uid == uid
+          && request.resource.data.role == "teacher"
+          && request.resource.data.classIds.size() == 0);
+
       allow update, delete: if isAdmin();
     }
 
@@ -55,9 +61,11 @@ service cloud.firestore {
     }
 
     match /students/{studentId} {
-      allow read: if isAdmin() || isFood() || (isTeacher() && teacherHasClass(resource.data.classId));
+      allow read: if isAdmin() || isFood()
+        || (isTeacher() && teacherHasClass(resource.data.classId));
 
-      allow create: if isAdmin() || (isTeacher() && teacherHasClass(request.resource.data.classId));
+      allow create: if isAdmin()
+        || (isTeacher() && teacherHasClass(request.resource.data.classId));
 
       allow update: if isAdmin()
         || (isTeacher()
@@ -71,7 +79,8 @@ service cloud.firestore {
       allow read: if isAdmin() || isFood()
         || (isTeacher() && teacherHasClass(resource.data.classId));
 
-      allow create: if isAdmin() || (isTeacher() && teacherBeforeDeadline(request.resource.data));
+      allow create: if isAdmin()
+        || (isTeacher() && teacherBeforeDeadline(request.resource.data));
 
       allow update: if isAdmin()
         || (isTeacher()
@@ -83,27 +92,34 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    match /teacherMeals/{mealId} {
-      allow read: if isAdmin() || isFood() || (isTeacher() && resource.data.userId == request.auth.uid);
-      allow create: if isTeacher() && request.resource.data.userId == request.auth.uid
-        && request.resource.data.status in ["eating", "not_eating"];
-      allow update: if isTeacher() && resource.data.userId == request.auth.uid
-        && request.resource.data.userId == request.auth.uid
-        && request.resource.data.status in ["eating", "not_eating"];
-      allow delete: if isAdmin();
-    }
-
     match /dailySubmissions/{submissionId} {
       allow read: if isAdmin() || isFood()
         || (isTeacher() && teacherHasClass(resource.data.classId));
 
-      allow create: if isAdmin() || (isTeacher() && teacherBeforeDeadline(request.resource.data));
+      allow create: if isAdmin()
+        || (isTeacher() && teacherBeforeDeadline(request.resource.data));
 
       allow update: if isAdmin()
         || (isTeacher()
           && teacherBeforeDeadline(resource.data)
           && request.resource.data.classId == resource.data.classId
           && request.resource.data.dateKey == resource.data.dateKey);
+
+      allow delete: if isAdmin();
+    }
+
+    match /teacherMeals/{mealId} {
+      allow read: if isAdmin() || isFood()
+        || (isTeacher() && resource.data.userId == request.auth.uid);
+
+      allow create: if isTeacher()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.status in ["eating", "not_eating"];
+
+      allow update: if isTeacher()
+        && resource.data.userId == request.auth.uid
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.status in ["eating", "not_eating"];
 
       allow delete: if isAdmin();
     }
