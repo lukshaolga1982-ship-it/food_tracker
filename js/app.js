@@ -340,7 +340,7 @@ window.FOOD_APP = window.FOOD_APP || {};
       const isFuture=selectedDate>n.dateKey;
       const isPast=selectedDate<n.dateKey;
       banner=editable
-        ?`<div class="deadline-banner open"><div><b>${isFuture?"Предварительное редактирование открыто":"Редактирование открыто до "+deadline}</b><div class="muted">${isFuture?"Будущий день: "+fmtDate(selectedDate):"Текущий день: "+fmtDate(selectedDate)}</div></div>${submitted?`<span class="status ok">✓ Сведения переданы</span>`:""}</div>`
+        ?`<div class="deadline-banner open"><div><b>${submitted?"✓ Сведения переданы — редактирование всё ещё доступно":(isFuture?"Предварительное редактирование открыто":"Редактирование открыто до "+deadline)}</b><div class="muted">${submitted?(isFuture?"Можно изменить данные будущего дня и повторно подтвердить сведения.":"До "+deadline+" текущего дня можно вносить исправления. После изменения нажмите «Обновить сведения»."):(isFuture?"Будущий день: "+fmtDate(selectedDate):"Текущий день: "+fmtDate(selectedDate))}</div></div>${submitted?`<span class="status ok">✓ Передано</span>`:""}</div>`
         :`<div class="deadline-banner locked"><div><b>🔒 Редактирование закрыто</b><div class="muted">${isPast?"Прошедшие дни доступны только для просмотра.":"Сегодня редактирование закрыто после "+deadline+"."}</div></div></div>`;
     }else{
       banner=`<div class="deadline-banner ${profile.role==="admin"?"open":"locked"}"><div><b>${profile.role==="admin"?"Режим администратора":"Режим просмотра"}</b><div class="muted">${profile.role==="admin"?"Администратор может исправлять данные после дедлайна; изменение попадёт в журнал.":"Ответственный за питание просматривает сведения без изменения."}</div></div></div>`;
@@ -348,12 +348,14 @@ window.FOOD_APP = window.FOOD_APP || {};
     body.innerHTML=`${banner}
       ${editable?`<div class="bulk-bar"><input id="selectAllStudents" class="checkbox" type="checkbox"><b>Массово:</b><button class="btn btn-sm btn-secondary" data-bulk="eating">✓ Питаются</button><button class="btn btn-sm btn-secondary" data-bulk="absent">Н Отсутствуют</button><button class="btn btn-sm btn-secondary" data-bulk="not_eating">– Не питаются</button></div>`:""}
       <div class="student-list">${students.map(s=>studentDailyRow(s,map.get(s.id),editable)).join("")||`<div class="empty"><strong>Нет учащихся</strong>Добавьте учащихся во вкладке «Учащиеся».</div>`}</div>
-      ${profile.role==="teacher"&&editable?`<div style="margin-top:16px;display:flex;justify-content:flex-end"><button id="submitClassBtn" class="btn btn-primary">✓ Сведения переданы</button></div>`:""}`;
+      ${profile.role==="teacher"&&editable?`<div style="margin-top:16px;display:flex;justify-content:flex-end"><button id="submitClassBtn" class="btn btn-primary">${submitted?"✓ Обновить сведения":"✓ Сведения переданы"}</button></div>`:""}`;
     bindDailyControls(students,map,editable);
     if($("#submitClassBtn"))$("#submitClassBtn").onclick=async()=>{
       const result=await Service.submitClass(selectedDate,currentClassId,profile);
       const n=result?.recordsMaterialized||0;
-      toast(n?`Сведения класса переданы. Зафиксировано учащихся: ${n}`:"Сведения класса переданы");
+      toast(submitted
+        ? (n?`Изменения сохранены и сведения обновлены. Учащихся: ${n}`:"Изменения сохранены и сведения обновлены")
+        : (n?`Сведения класса переданы. Зафиксировано учащихся: ${n}`:"Сведения класса переданы"));
       renderClassToday();
     };
   }
