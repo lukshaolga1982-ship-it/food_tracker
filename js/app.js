@@ -20,10 +20,9 @@ window.FOOD_APP = window.FOOD_APP || {};
     if(profile?.role==="admin") return true;
     if(profile?.role!=="teacher") return false;
     const n=nowParts();
-    // После дедлайна блокируется только сегодняшний день и прошлые даты.
-    // Будущие дни остаются доступными для предварительной отметки питания.
-    if(dateKey>n.dateKey) return true;
-    if(dateKey<n.dateKey) return false;
+    // Классный руководитель редактирует только текущий день и только до дедлайна.
+    // Нажатие «Сведения переданы» не блокирует повторное редактирование до 09:00.
+    if(dateKey!==n.dateKey) return false;
     const [h,m]=(settings?.editDeadline||"09:00").split(":").map(Number);
     return n.hour<h || (n.hour===h && n.minute<m);
   }
@@ -337,11 +336,11 @@ window.FOOD_APP = window.FOOD_APP || {};
     const n=nowParts(), deadline=settings?.editDeadline||"09:00";
     let banner;
     if(profile.role==="teacher"){
-      const isFuture=selectedDate>n.dateKey;
       const isPast=selectedDate<n.dateKey;
+      const isFuture=selectedDate>n.dateKey;
       banner=editable
-        ?`<div class="deadline-banner open"><div><b>${submitted?"✓ Сведения переданы — редактирование всё ещё доступно":(isFuture?"Предварительное редактирование открыто":"Редактирование открыто до "+deadline)}</b><div class="muted">${submitted?(isFuture?"Можно изменить данные будущего дня и повторно подтвердить сведения.":"До "+deadline+" текущего дня можно вносить исправления. После изменения нажмите «Обновить сведения»."):(isFuture?"Будущий день: "+fmtDate(selectedDate):"Текущий день: "+fmtDate(selectedDate))}</div></div>${submitted?`<span class="status ok">✓ Передано</span>`:""}</div>`
-        :`<div class="deadline-banner locked"><div><b>🔒 Редактирование закрыто</b><div class="muted">${isPast?"Прошедшие дни доступны только для просмотра.":"Сегодня редактирование закрыто после "+deadline+"."}</div></div></div>`;
+        ?`<div class="deadline-banner open"><div><b>${submitted?"✓ Сведения переданы — можно исправлять до "+deadline:"Редактирование открыто до "+deadline}</b><div class="muted">${submitted?"После изменения отметок нажмите «Обновить сведения».":"Текущий день: "+fmtDate(selectedDate)}</div></div>${submitted?`<span class="status ok">✓ Передано</span>`:""}</div>`
+        :`<div class="deadline-banner locked"><div><b>🔒 Редактирование закрыто</b><div class="muted">${isPast?"Прошедшие дни доступны только для просмотра.":isFuture?"Будущие дни пока доступны только для просмотра.":"Сегодня редактирование закрыто после "+deadline+"."}</div></div></div>`;
     }else{
       banner=`<div class="deadline-banner ${profile.role==="admin"?"open":"locked"}"><div><b>${profile.role==="admin"?"Режим администратора":"Режим просмотра"}</b><div class="muted">${profile.role==="admin"?"Администратор может исправлять данные после дедлайна; изменение попадёт в журнал.":"Ответственный за питание просматривает сведения без изменения."}</div></div></div>`;
     }
@@ -383,7 +382,14 @@ window.FOOD_APP = window.FOOD_APP || {};
       const row=btn.closest("[data-student]"),sid=row.dataset.student,meal=btn.closest(".segment").dataset.meal,status=btn.dataset.status,s=students.find(x=>x.id===sid);
       state.get(sid)[meal]=status;
       btn.parentElement.querySelectorAll("button").forEach(x=>x.classList.toggle("active",x===btn));
-      try{await Service.saveDailyRecord(s,selectedDate,state.get(sid).lunch,state.get(sid).snack,profile)}catch(e){toast(e.message,"error")}
+      try{
+        await Service.saveDailyRecord(s,selectedDate,state.get(sid).lunch,state.get(sid).snack,profile)
+      }catch(e){
+        const msg=String(e?.message||e);
+        toast(msg.toLowerCase().includes("permission")
+          ?"Firebase не разрешил изменение. Проверьте опубликованные Firestore Rules и время редактирования (до 09:00)."
+          :msg,"error");
+      }
     });
     if($("#selectAllStudents"))$("#selectAllStudents").onchange=e=>$$(".row-check").forEach(x=>x.checked=e.target.checked);
     $$("[data-bulk]").forEach(b=>b.onclick=async()=>{
