@@ -566,12 +566,12 @@ window.FOOD_APP = window.FOOD_APP || {};
     const month=today.slice(0,7);
     const defaultStart=weekStart, defaultEnd=today;
     const periodControls=`<div class="form-grid"><label><span>Период</span><select id="reportPeriod"><option value="day">День</option><option value="week" selected>Неделя</option><option value="month">Месяц</option><option value="custom">Произвольный</option></select></label><label><span>Дата</span><input id="reportDate" type="date" value="${today}"></label><label id="reportMonthWrap" class="hidden"><span>Месяц</span><input id="reportMonth" type="month" value="${month}"></label><label id="reportStartWrap" class="hidden"><span>Начало</span><input id="reportStart" type="date" value="${defaultStart}"></label><label id="reportEndWrap" class="hidden"><span>Конец</span><input id="reportEnd" type="date" value="${defaultEnd}"></label></div>`;
-    $("#content").innerHTML=`<div class="card"><div class="card-header"><h3>Списочные отчёты</h3></div><div class="card-body"><p class="muted">Выберите период. В каждом отчёте видно количество питания <b>по каждому ребёнку</b> и итоговое количество <b>по каждому дню</b>. Предпросмотр открывается на странице и ничего не скачивает.</p>${periodControls}<div class="report-actions" style="margin-top:14px;display:grid;gap:10px"><div class="page-actions"><button id="makeReportsBtn" class="btn btn-primary">⇩ Скачать все отчёты</button><button id="previewReportsBtn" class="btn btn-secondary">👁 Предпросмотр всех</button></div><div class="page-actions"><button id="makeParentReportsBtn" class="btn btn-secondary">Родительская плата</button><button id="previewParentReportsBtn" class="btn btn-secondary">👁 Просмотр</button></div><div class="page-actions"><button id="makeDietReportsBtn" class="btn btn-secondary">Диетическое питание</button><button id="previewDietReportsBtn" class="btn btn-secondary">👁 Просмотр</button></div><div class="page-actions"><button id="makeBenefit5ReportsBtn" class="btn btn-secondary">Льготные 5А–5Б</button><button id="previewBenefit5ReportsBtn" class="btn btn-secondary">👁 Просмотр</button></div><div class="page-actions"><button id="makeBenefit68ReportsBtn" class="btn btn-secondary">Льготные 6–8</button><button id="previewBenefit68ReportsBtn" class="btn btn-secondary">👁 Просмотр</button></div><div class="page-actions"><button id="makeBenefit911ReportsBtn" class="btn btn-secondary">Льготные 9–11</button><button id="previewBenefit911ReportsBtn" class="btn btn-secondary">👁 Просмотр</button></div></div><div id="reportHint" class="notice" style="margin-top:14px">Для одного отчёта нажмите «Просмотр», чтобы проверить данные перед скачиванием.</div></div></div>`;
+    $("#content").innerHTML=`<div class="card"><div class="card-header"><h3>Списочные отчёты</h3></div><div class="card-body"><p class="muted">Выберите период. В каждом отчёте видно количество питания <b>по каждому ребёнку</b> и итоговое количество <b>по каждому дню</b>. Предпросмотр открывается на странице и ничего не скачивает.</p>${periodControls}<div class="report-actions" style="margin-top:14px;display:grid;gap:10px"><div class="page-actions"><button id="makeReportsBtn" class="btn btn-primary">⇩ Скачать все отчёты</button><button id="previewReportsBtn" class="btn btn-secondary">👁 Предпросмотр всех</button></div><div class="page-actions"><button id="makeParentReportsBtn" class="btn btn-secondary">Родительская плата</button><button id="previewParentReportsBtn" class="btn btn-secondary">👁 Просмотр</button></div><div class="page-actions"><button id="makeDietReportsBtn" class="btn btn-secondary">Диетическое питание</button><button id="previewDietReportsBtn" class="btn btn-secondary">👁 Просмотр</button></div><div class="page-actions"><button id="makeBenefit5ReportsBtn" class="btn btn-secondary">Льготные 5А–5Б</button><button id="previewBenefit5ReportsBtn" class="btn btn-secondary">👁 Просмотр</button></div><div class="page-actions"><button id="makeBenefit68ReportsBtn" class="btn btn-secondary">Льготные 6–8</button><button id="previewBenefit68ReportsBtn" class="btn btn-secondary">👁 Просмотр</button></div><div class="page-actions"><button id="makeBenefit911ReportsBtn" class="btn btn-secondary">Льготные 9–11</button><button id="previewBenefit911ReportsBtn" class="btn btn-secondary">👁 Просмотр</button></div><div class="page-actions"><button id="makeTeacherReportsBtn" class="btn btn-secondary">Питание педагогов</button><button id="previewTeacherReportsBtn" class="btn btn-secondary">👁 Просмотр</button></div></div><div id="reportHint" class="notice" style="margin-top:14px">Для одного отчёта нажмите «Просмотр», чтобы проверить данные перед скачиванием.</div></div></div>`;
     const updatePeriod=()=>{const v=$("#reportPeriod").value;$("#reportDate").parentElement.classList.toggle("hidden",!['day','week'].includes(v));$("#reportMonthWrap").classList.toggle("hidden",v!=="month");$("#reportStartWrap").classList.toggle("hidden",v!=="custom");$("#reportEndWrap").classList.toggle("hidden",v!=="custom")};
     $("#reportPeriod").onchange=updatePeriod; updatePeriod();
     const loadReportData=async()=>{const range=getReportRange();if(!range.start||!range.end)throw new Error("Укажите корректный период");if(range.start>range.end)throw new Error("Начало периода не может быть позже конца");const students=await Service.getAllStudents(false);const records=await Service.getRecordsBetween(range.start,range.end);return {range,students,records};};
-    const runReport=async(type)=>{try{const {range,students,records}=await loadReportData();exportRequestedReports(students,records,range,type);toast(type==="all"?"Все отчёты сформированы":"Отчёт сформирован")}catch(e){console.error(e);toast(e.message,"error")}};
-    const previewReport=async(type)=>{try{const {range,students,records}=await loadReportData();previewRequestedReports(students,records,range,type)}catch(e){console.error(e);toast(e.message,"error")}};
+    const runReport=async(type)=>{try{const {range,students,records}=await loadReportData();if(type==="teachers"){await exportTeacherMealReport(range);toast("Отчёт по педагогам сформирован")}else{exportRequestedReports(students,records,range,type);toast(type==="all"?"Все отчёты сформированы":"Отчёт сформирован")}}catch(e){console.error(e);toast(e.message,"error")}};
+    const previewReport=async(type)=>{try{const {range,students,records}=await loadReportData();if(type==="teachers"){await previewTeacherMealReport(range)}else{previewRequestedReports(students,records,range,type)}}catch(e){console.error(e);toast(e.message,"error")}};
     $("#makeReportsBtn").onclick=()=>runReport("all");
     $("#makeParentReportsBtn").onclick=()=>runReport("parent");
     $("#makeDietReportsBtn").onclick=()=>runReport("diet");
@@ -584,6 +584,8 @@ window.FOOD_APP = window.FOOD_APP || {};
     $("#previewBenefit5ReportsBtn").onclick=()=>previewReport("benefit5");
     $("#previewBenefit68ReportsBtn").onclick=()=>previewReport("benefit68");
     $("#previewBenefit911ReportsBtn").onclick=()=>previewReport("benefit911");
+    $("#makeTeacherReportsBtn").onclick=()=>runReport("teachers");
+    $("#previewTeacherReportsBtn").onclick=()=>previewReport("teachers");
   }
   function getReportRange(){
     const mode=$("#reportPeriod").value;
@@ -592,6 +594,34 @@ window.FOOD_APP = window.FOOD_APP || {};
     if(mode==="custom") return {start:$("#reportStart").value,end:$("#reportEnd").value,label:`с ${fmtDate($("#reportStart").value)} по ${fmtDate($("#reportEnd").value)}`};
     const d=new Date($("#reportDate").value+"T12:00:00"),w=(d.getDay()+6)%7,s=new Date(d);s.setDate(d.getDate()-w);const e=new Date(s);e.setDate(s.getDate()+6);const k=x=>`${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,"0")}-${String(x.getDate()).padStart(2,"0")}`;return {start:k(s),end:k(e),label:`с ${fmtDate(k(s))} по ${fmtDate(k(e))}`};
   }
+
+  async function buildTeacherMealReport(range){
+    const dates=dateList(range.start,range.end);
+    const records=await Service.getTeacherMealsBetween(range.start,range.end);
+    const users=await Service.getUserProfiles();
+    const teachers=users.filter(u=>u.role==="teacher"&&u.active!==false).sort((a,b)=>String(a.displayName||a.username||"").localeCompare(String(b.displayName||b.username||""),"ru"));
+    const rm=new Map(records.map(r=>[`${r.userId}_${r.dateKey}`,r]));
+    const rows=[[`Питание педагогов ${range.label}`],["ФИО",...dates.map(fmtDate),"Итого"]];
+    const dayTotals=dates.map(d=>teachers.reduce((n,t)=>n+(rm.get(`${t.id}_${d}`)?.status==="eating"?1:0),0));
+    teachers.forEach(t=>{
+      const vals=dates.map(d=>rm.get(`${t.id}_${d}`)?.status==="eating"?"✓":"");
+      rows.push([t.displayName||t.username||"",...vals,vals.filter(Boolean).length]);
+    });
+    rows.push(["ИТОГО ЗА ДЕНЬ",...dayTotals,dayTotals.reduce((a,b)=>a+b,0)]);
+    return {rows,teachers,dates,records};
+  }
+  async function previewTeacherMealReport(range){
+    const {rows}=await buildTeacherMealReport(range);
+    const html=`<div class="notice" style="margin-bottom:12px">${esc(range.label)}. ✓ — педагог планирует обедать. В строке «ИТОГО ЗА ДЕНЬ» показано количество педагогов на каждый день, в колонке «Итого» — количество обедов каждого педагога за период.</div><div class="table-wrap"><table class="summary-table report-preview-table">${rows.map((row,ri)=>`<tr>${row.map(v=>ri===0?`<th colspan="${row.length}">${esc(v)}</th>`:ri===1?`<th>${esc(v)}</th>`:`<td class="${ri===rows.length-1?"total-lunch":""}">${esc(v)}</td>`).join("")}</tr>`).join("")}</table></div>`;
+    showModal("Предпросмотр: питание педагогов",html,()=>false);
+    $(".modal-save")?.classList.add("hidden");$(".modal-cancel")?.classList.add("hidden");
+  }
+  async function exportTeacherMealReport(range){
+    const {rows}=await buildTeacherMealReport(range);
+    const suffix=`${range.start}_${range.end}`;
+    aoaToBook(`Питание_педагогов_${suffix}.xlsx`,{"Педагоги":rows});
+  }
+
   function dateList(start,end){const out=[];for(let d=new Date(start+"T12:00:00"),e=new Date(end+"T12:00:00");d<=e;d.setDate(d.getDate()+1))out.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`);return out}
   function studentMealForDay(s,recordsMap,date,meal){const r=recordsMap.get(`${s.id}_${date}`);const status=r?.[meal+"Status"]||(s[meal+"Category"]?"eating":"none");return status==="eating"?true:false}
   function listReportSheet(title,students,records,dates,meal,filterFn){const rm=new Map(records.map(r=>[`${r.studentId}_${r.dateKey}`,r]));const rows=[[title],["ФИО","Класс",...dates.map(fmtDate),"Итого"]];const filtered=students.filter(filterFn).sort((a,b)=>String(a.fullName).localeCompare(String(b.fullName),"ru"));const dayTotals=dates.map(d=>filtered.reduce((n,s)=>n+(studentMealForDay(s,rm,d,meal)?1:0),0));filtered.forEach(s=>{const vals=dates.map(d=>studentMealForDay(s,rm,d,meal)?"✓":"");rows.push([s.fullName,classById(s.classId)?.name||s.classId,...vals,vals.filter(Boolean).length])});rows.push(["ИТОГО ЗА ДЕНЬ","",...dayTotals,dayTotals.reduce((a,b)=>a+b,0)]);return rows}
