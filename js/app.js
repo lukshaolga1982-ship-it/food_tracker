@@ -504,16 +504,24 @@ window.FOOD_APP = window.FOOD_APP || {};
     const month=today.slice(0,7);
     const defaultStart=weekStart, defaultEnd=today;
     const periodControls=`<div class="form-grid"><label><span>Период</span><select id="reportPeriod"><option value="day">День</option><option value="week" selected>Неделя</option><option value="month">Месяц</option><option value="custom">Произвольный</option></select></label><label><span>Дата</span><input id="reportDate" type="date" value="${today}"></label><label id="reportMonthWrap" class="hidden"><span>Месяц</span><input id="reportMonth" type="month" value="${month}"></label><label id="reportStartWrap" class="hidden"><span>Начало</span><input id="reportStart" type="date" value="${defaultStart}"></label><label id="reportEndWrap" class="hidden"><span>Конец</span><input id="reportEnd" type="date" value="${defaultEnd}"></label></div>`;
-    $("#content").innerHTML=`<div class="card"><div class="card-header"><h3>Списочные отчёты</h3></div><div class="card-body"><p class="muted">Выберите период и сформируйте Excel. Завтрак соответствует действующей в системе категории «Обед», полдник — категории «Полдник».</p>${periodControls}<div class="page-actions" style="margin-top:14px;flex-wrap:wrap"><button id="makeReportsBtn" class="btn btn-primary">⇩ Все отчёты одним файлом</button><button id="makeParentReportsBtn" class="btn btn-secondary">Родительская плата</button><button id="makeDietReportsBtn" class="btn btn-secondary">Диетическое питание</button><button id="makeBenefit5ReportsBtn" class="btn btn-secondary">Льготные 5А–5Б</button><button id="makeBenefit68ReportsBtn" class="btn btn-secondary">Льготные 6–8</button><button id="makeBenefit911ReportsBtn" class="btn btn-secondary">Льготные 9–11</button></div><div id="reportHint" class="notice" style="margin-top:14px">Можно скачать все отчёты одним файлом или сформировать только нужный вид отдельным Excel-файлом.</div></div></div>`;
+    $("#content").innerHTML=`<div class="card"><div class="card-header"><h3>Списочные отчёты</h3></div><div class="card-body"><p class="muted">Выберите период. В каждом отчёте видно количество питания <b>по каждому ребёнку</b> и итоговое количество <b>по каждому дню</b>. Предпросмотр открывается на странице и ничего не скачивает.</p>${periodControls}<div class="report-actions" style="margin-top:14px;display:grid;gap:10px"><div class="page-actions"><button id="makeReportsBtn" class="btn btn-primary">⇩ Скачать все отчёты</button><button id="previewReportsBtn" class="btn btn-secondary">👁 Предпросмотр всех</button></div><div class="page-actions"><button id="makeParentReportsBtn" class="btn btn-secondary">Родительская плата</button><button id="previewParentReportsBtn" class="btn btn-secondary">👁 Просмотр</button></div><div class="page-actions"><button id="makeDietReportsBtn" class="btn btn-secondary">Диетическое питание</button><button id="previewDietReportsBtn" class="btn btn-secondary">👁 Просмотр</button></div><div class="page-actions"><button id="makeBenefit5ReportsBtn" class="btn btn-secondary">Льготные 5А–5Б</button><button id="previewBenefit5ReportsBtn" class="btn btn-secondary">👁 Просмотр</button></div><div class="page-actions"><button id="makeBenefit68ReportsBtn" class="btn btn-secondary">Льготные 6–8</button><button id="previewBenefit68ReportsBtn" class="btn btn-secondary">👁 Просмотр</button></div><div class="page-actions"><button id="makeBenefit911ReportsBtn" class="btn btn-secondary">Льготные 9–11</button><button id="previewBenefit911ReportsBtn" class="btn btn-secondary">👁 Просмотр</button></div></div><div id="reportHint" class="notice" style="margin-top:14px">Для одного отчёта нажмите «Просмотр», чтобы проверить данные перед скачиванием.</div></div></div>`;
     const updatePeriod=()=>{const v=$("#reportPeriod").value;$("#reportDate").parentElement.classList.toggle("hidden",!['day','week'].includes(v));$("#reportMonthWrap").classList.toggle("hidden",v!=="month");$("#reportStartWrap").classList.toggle("hidden",v!=="custom");$("#reportEndWrap").classList.toggle("hidden",v!=="custom")};
     $("#reportPeriod").onchange=updatePeriod; updatePeriod();
-    const runReport=async(type)=>{try{const range=getReportRange();if(!range.start||!range.end)throw new Error("Укажите корректный период");if(range.start>range.end)throw new Error("Начало периода не может быть позже конца");const students=await Service.getAllStudents(false);const records=await Service.getRecordsBetween(range.start,range.end);exportRequestedReports(students,records,range,type);toast(type==="all"?"Все отчёты сформированы":"Отчёт сформирован")}catch(e){console.error(e);toast(e.message,"error")}};
+    const loadReportData=async()=>{const range=getReportRange();if(!range.start||!range.end)throw new Error("Укажите корректный период");if(range.start>range.end)throw new Error("Начало периода не может быть позже конца");const students=await Service.getAllStudents(false);const records=await Service.getRecordsBetween(range.start,range.end);return {range,students,records};};
+    const runReport=async(type)=>{try{const {range,students,records}=await loadReportData();exportRequestedReports(students,records,range,type);toast(type==="all"?"Все отчёты сформированы":"Отчёт сформирован")}catch(e){console.error(e);toast(e.message,"error")}};
+    const previewReport=async(type)=>{try{const {range,students,records}=await loadReportData();previewRequestedReports(students,records,range,type)}catch(e){console.error(e);toast(e.message,"error")}};
     $("#makeReportsBtn").onclick=()=>runReport("all");
     $("#makeParentReportsBtn").onclick=()=>runReport("parent");
     $("#makeDietReportsBtn").onclick=()=>runReport("diet");
     $("#makeBenefit5ReportsBtn").onclick=()=>runReport("benefit5");
     $("#makeBenefit68ReportsBtn").onclick=()=>runReport("benefit68");
     $("#makeBenefit911ReportsBtn").onclick=()=>runReport("benefit911");
+    $("#previewReportsBtn").onclick=()=>previewReport("all");
+    $("#previewParentReportsBtn").onclick=()=>previewReport("parent");
+    $("#previewDietReportsBtn").onclick=()=>previewReport("diet");
+    $("#previewBenefit5ReportsBtn").onclick=()=>previewReport("benefit5");
+    $("#previewBenefit68ReportsBtn").onclick=()=>previewReport("benefit68");
+    $("#previewBenefit911ReportsBtn").onclick=()=>previewReport("benefit911");
   }
   function getReportRange(){
     const mode=$("#reportPeriod").value;
@@ -524,7 +532,30 @@ window.FOOD_APP = window.FOOD_APP || {};
   }
   function dateList(start,end){const out=[];for(let d=new Date(start+"T12:00:00"),e=new Date(end+"T12:00:00");d<=e;d.setDate(d.getDate()+1))out.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`);return out}
   function studentMealForDay(s,recordsMap,date,meal){const r=recordsMap.get(`${s.id}_${date}`);const status=r?.[meal+"Status"]||(s[meal+"Category"]?"eating":"none");return status==="eating"?true:false}
-  function listReportSheet(title,students,records,dates,meal,filterFn){const rm=new Map(records.map(r=>[`${r.studentId}_${r.dateKey}`,r]));const rows=[[title],["ФИО","Класс",...dates.map(fmtDate),"Итого"]];students.filter(filterFn).sort((a,b)=>String(a.fullName).localeCompare(String(b.fullName),"ru")).forEach(s=>{const vals=dates.map(d=>studentMealForDay(s,rm,d,meal)?"✓":"");rows.push([s.fullName,classById(s.classId)?.name||s.classId,...vals,vals.filter(Boolean).length])});return rows}
+  function listReportSheet(title,students,records,dates,meal,filterFn){const rm=new Map(records.map(r=>[`${r.studentId}_${r.dateKey}`,r]));const rows=[[title],["ФИО","Класс",...dates.map(fmtDate),"Итого"]];const filtered=students.filter(filterFn).sort((a,b)=>String(a.fullName).localeCompare(String(b.fullName),"ru"));const dayTotals=dates.map(d=>filtered.reduce((n,s)=>n+(studentMealForDay(s,rm,d,meal)?1:0),0));filtered.forEach(s=>{const vals=dates.map(d=>studentMealForDay(s,rm,d,meal)?"✓":"");rows.push([s.fullName,classById(s.classId)?.name||s.classId,...vals,vals.filter(Boolean).length])});rows.push(["ИТОГО ЗА ДЕНЬ","",...dayTotals,dayTotals.reduce((a,b)=>a+b,0)]);return rows}
+
+  function reportSheetGroups(students,records,range,type="all"){
+    const dates=dateList(range.start,range.end),groups=[];
+    const add=(name,title,ss,meal,filterFn)=>groups.push({name,title,rows:listReportSheet(title,ss,records,dates,meal,filterFn)});
+    if(type==="all"||type==="parent") classes.forEach(cls=>{
+      add(`${cls.name} Завтраки`,`${cls.name} — завтраки за родительскую плату ${range.label}`,students.filter(s=>s.classId===cls.id&&s.lunchCategory==="O"),"lunch",()=>true);
+      add(`${cls.name} Полдники`,`${cls.name} — полдники за родительскую плату ${range.label}`,students.filter(s=>s.classId===cls.id&&s.snackCategory==="P"),"snack",()=>true);
+    });
+    if(type==="all"||type==="diet"){const diet=students.filter(s=>s.dietary);add("Диеты Завтраки",`Диетическое питание — завтраки ${range.label}`,diet,"lunch",()=>true);add("Диеты Полдники",`Диетическое питание — полдники ${range.label}`,diet,"snack",()=>true)}
+    const gs={benefit5:{name:"5А–5Б",ids:["5a","5b"]},benefit68:{name:"6–8",ids:["6a","6b","7a","7b","8a","8b"]},benefit911:{name:"9–11",ids:["9","10","11"]}};
+    const wanted=type==="all"?["benefit5","benefit68","benefit911"]:gs[type]?[type]:[];
+    wanted.forEach(k=>{const g=gs[k],base=students.filter(s=>g.ids.includes(s.classId));add(`Льготные ${g.name} Завтраки`,`Льготные — ${g.name} — завтраки ${range.label}`,base,"lunch",s=>s.lunchCategory&&s.lunchCategory!=="O");add(`Льготные ${g.name} Полдники`,`Льготные — ${g.name} — полдники ${range.label}`,base,"snack",s=>s.snackCategory&&s.snackCategory!=="P")});
+    return groups;
+  }
+  function previewRequestedReports(students,records,range,type="all"){
+    const groups=reportSheetGroups(students,records,range,type);
+    const tabs=groups.map((g,i)=>`<button class="btn btn-secondary report-preview-tab${i===0?" active":""}" data-report-tab="${i}">${esc(g.name)}</button>`).join("");
+    const panes=groups.map((g,i)=>`<div class="report-preview-pane${i===0?"":" hidden"}" data-report-pane="${i}"><div class="table-wrap"><table class="summary-table report-preview-table">${g.rows.map((row,ri)=>`<tr>${row.map((v,ci)=>ri===0?`<th colspan="${Math.max(1,row.length)}">${esc(v)}</th>`:ri===1?`<th>${esc(v)}</th>`:`<td class="${ri===g.rows.length-1?"total-lunch":""}">${esc(v)}</td>`).join("")}</tr>`).join("")}</table></div></div>`).join("");
+    showModal("Предпросмотр отчёта",`<div class="notice" style="margin-bottom:12px">${esc(range.label)}. В строке «ИТОГО ЗА ДЕНЬ» показано количество детей, получающих питание в каждый день. В колонке «Итого» — количество дней питания по каждому ребёнку.</div><div class="page-actions" style="flex-wrap:wrap;margin-bottom:12px">${tabs}</div>${panes}`,()=>false);
+    $(".modal-save")?.classList.add("hidden");$(".modal-cancel")?.classList.add("hidden");
+    $$(".report-preview-tab").forEach(b=>b.onclick=()=>{$$(".report-preview-tab").forEach(x=>x.classList.remove("active"));b.classList.add("active");$$(".report-preview-pane").forEach(p=>p.classList.toggle("hidden",p.dataset.reportPane!==b.dataset.reportTab))});
+  }
+
   function exportRequestedReports(students,records,range,type="all"){
     const dates=dateList(range.start,range.end),sheets={};
     const addParent=()=>classes.forEach(cls=>{

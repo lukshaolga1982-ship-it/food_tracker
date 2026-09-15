@@ -323,11 +323,21 @@ window.FOOD_APP = window.FOOD_APP || {};
       return snap.exists?{id:snap.id,...snap.data()}:null;
     }
     async getTeacherMealsBetween(startDate,endDate,uid=null){
+      // Do not combine userId equality with the date range: that requires a
+      // Firestore composite index. Fetch by one field only and filter/sort
+      // the small result set in the client. This makes the teacher section
+      // work immediately after deployment without creating an index.
       let q=this.db.collection("teacherMeals");
-      if(uid) q=q.where("userId","==",uid);
-      q=q.where("dateKey",">=",startDate).where("dateKey","<=",endDate);
-      const s=await q.get();
-      return s.docs.map(d=>({id:d.id,...d.data()}));
+      if(uid){
+        const s=await q.where("userId","==",uid).get();
+        return s.docs
+          .map(d=>({id:d.id,...d.data()}))
+          .filter(r=>r.dateKey>=startDate&&r.dateKey<=endDate)
+          .sort((a,b)=>String(a.dateKey).localeCompare(String(b.dateKey)));
+      }
+      const s=await q.where("dateKey",">=",startDate).where("dateKey","<=",endDate).get();
+      return s.docs.map(d=>({id:d.id,...d.data()}))
+        .sort((a,b)=>String(a.dateKey).localeCompare(String(b.dateKey)));
     }
     async getRecordsBetween(startDate,endDate){
       const s=await this.db.collection("dailyRecords").where("dateKey",">=",startDate).where("dateKey","<=",endDate).get();
