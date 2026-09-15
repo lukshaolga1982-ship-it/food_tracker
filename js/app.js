@@ -20,7 +20,10 @@ window.FOOD_APP = window.FOOD_APP || {};
     if(profile?.role==="admin") return true;
     if(profile?.role!=="teacher") return false;
     const n=nowParts();
-    if(dateKey!==n.dateKey) return false;
+    // После дедлайна блокируется только сегодняшний день и прошлые даты.
+    // Будущие дни остаются доступными для предварительной отметки питания.
+    if(dateKey>n.dateKey) return true;
+    if(dateKey<n.dateKey) return false;
     const [h,m]=(settings?.editDeadline||"09:00").split(":").map(Number);
     return n.hour<h || (n.hour===h && n.minute<m);
   }
@@ -334,8 +337,11 @@ window.FOOD_APP = window.FOOD_APP || {};
     const n=nowParts(), deadline=settings?.editDeadline||"09:00";
     let banner;
     if(profile.role==="teacher"){
-      banner=editable?`<div class="deadline-banner open"><div><b>Редактирование открыто до ${deadline}</b><div class="muted">Текущий день: ${fmtDate(selectedDate)}</div></div>${submitted?`<span class="status ok">✓ Сведения переданы</span>`:""}</div>`
-        :`<div class="deadline-banner locked"><div><b>🔒 Редактирование закрыто</b><div class="muted">Классный руководитель может изменять текущий день только до ${deadline}.</div></div></div>`;
+      const isFuture=selectedDate>n.dateKey;
+      const isPast=selectedDate<n.dateKey;
+      banner=editable
+        ?`<div class="deadline-banner open"><div><b>${isFuture?"Предварительное редактирование открыто":"Редактирование открыто до "+deadline}</b><div class="muted">${isFuture?"Будущий день: "+fmtDate(selectedDate):"Текущий день: "+fmtDate(selectedDate)}</div></div>${submitted?`<span class="status ok">✓ Сведения переданы</span>`:""}</div>`
+        :`<div class="deadline-banner locked"><div><b>🔒 Редактирование закрыто</b><div class="muted">${isPast?"Прошедшие дни доступны только для просмотра.":"Сегодня редактирование закрыто после "+deadline+"."}</div></div></div>`;
     }else{
       banner=`<div class="deadline-banner ${profile.role==="admin"?"open":"locked"}"><div><b>${profile.role==="admin"?"Режим администратора":"Режим просмотра"}</b><div class="muted">${profile.role==="admin"?"Администратор может исправлять данные после дедлайна; изменение попадёт в журнал.":"Ответственный за питание просматривает сведения без изменения."}</div></div></div>`;
     }
@@ -410,7 +416,17 @@ window.FOOD_APP = window.FOOD_APP || {};
     if(status==="not_eating")return "–";
     return catNumber(record?.[meal+"Category"]||cat);
   }
-  function monthStudentCell(s,r){return `<td class="day-cell"><div class="subcols"><span class="mini-cell lunch">${esc(valForMeal(s,r,"lunch"))}</span><span class="mini-cell snack">${esc(valForMeal(s,r,"snack"))}</span></div></td>`}
+  function mealCellClass(s,r,meal){
+    const cat=s[meal+"Category"], status=r?.[meal+"Status"]||(cat?"eating":"none");
+    if(!cat||status==="none") return "none";
+    if(status==="absent") return "absent";
+    if(status==="not_eating") return "not-eating";
+    return "eating";
+  }
+  function monthStudentCell(s,r){
+    const lc=mealCellClass(s,r,"lunch"), sc=mealCellClass(s,r,"snack");
+    return `<td class="day-cell"><div class="subcols"><span class="mini-cell lunch ${lc}" title="${lc==="absent"?"Отсутствует":lc==="not-eating"?"Не питается":"Питается"}">${esc(valForMeal(s,r,"lunch"))}</span><span class="mini-cell snack ${sc}" title="${sc==="absent"?"Отсутствует":sc==="not-eating"?"Не питается":"Питается"}">${esc(valForMeal(s,r,"snack"))}</span></div></td>`
+  }
 
   async function renderClassStudents(){
     const body=$("#classTabBody"), students=await Service.getStudents(currentClassId,true);
