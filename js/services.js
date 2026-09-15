@@ -145,12 +145,43 @@ window.FOOD_APP = window.FOOD_APP || {};
       return payload;
     }
     async submitClass(dateKey,classId,actor){
+      // Фиксируем полный снимок класса за день.
+      // В интерфейсе учащийся с назначенной категорией считается питающимся
+      // даже без отдельной dailyRecords-записи. При передаче сведений нужно
+      // материализовать это состояние в dailyRecords, чтобы сводные отчёты
+      // считали те же данные, что и дневной экран класса.
+      const [students,existing] = await Promise.all([
+        this.getStudents(classId),
+        this.getDailyRecords(dateKey,classId)
+      ]);
+      const existingMap = new Map(existing.map(r=>[r.studentId,r]));
       const parts = parseDateKey(dateKey);
+      const batch = this.db.batch();
+      let created = 0;
+
+      students.forEach(student=>{
+        if(existingMap.has(student.id)) return;
+        if(!student.lunchCategory && !student.snackCategory) return;
+        const ref=this.db.collection("dailyRecords").doc(`${dateKey}_${student.id}`);
+        batch.set(ref,{
+          dateKey,...parts,studentId:student.id,studentName:student.fullName,classId:student.classId,
+          lunchCategory:student.lunchCategory||null,snackCategory:student.snackCategory||null,
+          lunchStatus:student.lunchCategory?"eating":"none",
+          snackStatus:student.snackCategory?"eating":"none",
+          updatedBy:actor.id,updatedAt:this.FieldValue.serverTimestamp(),
+          submittedSnapshot:true
+        },{merge:true});
+        created++;
+      });
+      if(created) await batch.commit();
+
       await this.db.collection("dailySubmissions").doc(`${dateKey}_${classId}`).set({
         dateKey,...parts,classId,submittedBy:actor.id,submittedByName:actor.displayName||actor.username||"",
-        submittedAt:this.FieldValue.serverTimestamp(),updatedAt:this.FieldValue.serverTimestamp()
+        submittedAt:this.FieldValue.serverTimestamp(),updatedAt:this.FieldValue.serverTimestamp(),
+        recordsMaterialized:created
       },{merge:true});
-      await this.log(actor,"class_submitted",{dateKey,classId});
+      await this.log(actor,"class_submitted",{dateKey,classId,recordsMaterialized:created});
+      return {recordsMaterialized:created};
     }
     async getSubmissions(dateKey,classId=null){
       let q = this.db.collection("dailySubmissions").where("dateKey","==",dateKey);
@@ -330,7 +361,30 @@ window.FOOD_APP = window.FOOD_APP || {};
       const r={id:rid,dateKey,...parts,studentId:student.id,studentName:student.fullName,classId:student.classId,lunchCategory:student.lunchCategory||null,snackCategory:student.snackCategory||null,lunchStatus:student.lunchCategory?lunchStatus:"none",snackStatus:student.snackCategory?snackStatus:"none"};
       if(idx>=0)this.data.records[idx]=r;else this.data.records.push(r);this.save();return r;
     }
-    async submitClass(dateKey,classId){const rid=`${dateKey}_${classId}`,idx=this.data.submissions.findIndex(x=>x.id===rid);const s={id:rid,dateKey,classId,submittedAt:new Date().toISOString()};if(idx>=0)this.data.submissions[idx]=s;else this.data.submissions.push(s);this.save()}
+    async submitClass(dateKey,classId){
+      const students=await this.getStudents(classId);
+      const existing=this.data.records.filter(x=>x.dateKey===dateKey&&x.classId===classId);
+      const existingMap=new Map(existing.map(r=>[r.studentId,r]));
+      let created=0;
+      students.forEach(student=>{
+        if(existingMap.has(student.id)) return;
+        if(!student.lunchCategory && !student.snackCategory) return;
+        const parts=parseDateKey(dateKey);
+        this.data.records.push({
+          id:`${dateKey}_${student.id}`,dateKey,...parts,studentId:student.id,studentName:student.fullName,classId:student.classId,
+          lunchCategory:student.lunchCategory||null,snackCategory:student.snackCategory||null,
+          lunchStatus:student.lunchCategory?"eating":"none",
+          snackStatus:student.snackCategory?"eating":"none",
+          submittedSnapshot:true
+        });
+        created++;
+      });
+      const rid=`${dateKey}_${classId}`,idx=this.data.submissions.findIndex(x=>x.id===rid);
+      const s={id:rid,dateKey,classId,submittedAt:new Date().toISOString(),recordsMaterialized:created};
+      if(idx>=0)this.data.submissions[idx]=s;else this.data.submissions.push(s);
+      this.save();
+      return {recordsMaterialized:created};
+    }
     async getSubmissions(dateKey,classId=null){return this.data.submissions.filter(x=>x.dateKey===dateKey&&(!classId||x.classId===classId))}
     async importStudents(rows){rows.forEach(r=>this.data.students.push({...r,id:id(),status:"active"}));this.save()}
 

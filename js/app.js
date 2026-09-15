@@ -25,8 +25,9 @@ window.FOOD_APP = window.FOOD_APP || {};
     return n.hour<h || (n.hour===h && n.minute<m);
   }
   function roleLabel(){return C.ROLE_LABELS[profile?.role]||profile?.role||"—";}
-  function catName(code){return C.categoryByCode(code)?.name||"Не получает";}
+  function catName(code){return C.categoryByCode(code)?.name||"";}
   function catShort(code){return C.categoryByCode(code)?.short||"—";}
+  function catLabel(code){const c=C.categoryByCode(code);if(!c)return "—";return c.name?c.short+" · "+c.name:c.short;}
   function catNumber(code){return C.categoryByCode(code)?.number||"";}
   function classById(id){return classes.find(x=>x.id===id);}
   function setTitle(title,subtitle=""){ $("#pageTitle").textContent=title;$("#pageSubtitle").textContent=subtitle; }
@@ -285,7 +286,12 @@ window.FOOD_APP = window.FOOD_APP || {};
       <div class="student-list">${students.map(s=>studentDailyRow(s,map.get(s.id),editable)).join("")||`<div class="empty"><strong>Нет учащихся</strong>Добавьте учащихся во вкладке «Учащиеся».</div>`}</div>
       ${profile.role==="teacher"&&editable?`<div style="margin-top:16px;display:flex;justify-content:flex-end"><button id="submitClassBtn" class="btn btn-primary">✓ Сведения переданы</button></div>`:""}`;
     bindDailyControls(students,map,editable);
-    if($("#submitClassBtn"))$("#submitClassBtn").onclick=async()=>{await Service.submitClass(selectedDate,currentClassId,profile);toast("Сведения класса переданы");renderClassToday()};
+    if($("#submitClassBtn"))$("#submitClassBtn").onclick=async()=>{
+      const result=await Service.submitClass(selectedDate,currentClassId,profile);
+      const n=result?.recordsMaterialized||0;
+      toast(n?`Сведения класса переданы. Зафиксировано учащихся: ${n}`:"Сведения класса переданы");
+      renderClassToday();
+    };
   }
   function studentDailyRow(s,r,editable){
     const st=defaultStatuses(s,r);
@@ -297,7 +303,7 @@ window.FOOD_APP = window.FOOD_APP || {};
   }
   function mealControl(title,category,status,meal,editable){
     const disabled=!category;
-    return `<div class="meal-cell"><div class="meal-head"><b>${title}</b><span class="badge ${meal==="lunch"?"cream":""}">${disabled?"Не получает":esc(catShort(category)+" · "+catName(category))}</span></div>
+    return `<div class="meal-cell"><div class="meal-head"><b>${title}</b><span class="badge ${meal==="lunch"?"cream":""}">${disabled?"Не получает":esc(catLabel(category))}</span></div>
       <div class="segment ${disabled||!editable?"disabled":""}" data-meal="${meal}">
         <button data-status="eating" class="${status==="eating"?"active":""}">✓</button>
         <button data-status="absent" class="${status==="absent"?"active":""}">Н</button>
@@ -358,7 +364,7 @@ window.FOOD_APP = window.FOOD_APP || {};
     bindStudentActions(students,canManage);
   }
   function studentRows(students,canManage){
-    return students.map(s=>`<tr><td><b>${esc(s.fullName)}</b></td><td>${esc(catShort(s.lunchCategory))}<div class="student-meta">${esc(catName(s.lunchCategory))}</div></td><td>${s.snackCategory?esc(catShort(s.snackCategory)):"—"}<div class="student-meta">${esc(catName(s.snackCategory))}</div></td><td>${s.status==="withdrawn"?`<span class="status off">Выбыл</span>`:`<span class="status ok">Активен</span>`}</td><td><div class="actions">${canManage?`<button class="btn btn-sm btn-secondary" data-edit-student="${s.id}">Изменить</button>${profile.role==="admin"?`<button class="btn btn-sm btn-secondary" data-transfer="${s.id}">Перевести</button>`:""}${s.status!=="withdrawn"?`<button class="btn btn-sm btn-danger" data-withdraw="${s.id}">Выбыл</button>`:""}`:""}</div></td></tr>`).join("")||`<tr><td colspan="5"><div class="empty">Нет учащихся</div></td></tr>`;
+    return students.map(s=>`<tr><td><b>${esc(s.fullName)}</b></td><td>${esc(catShort(s.lunchCategory))}${catName(s.lunchCategory)?`<div class="student-meta">${esc(catName(s.lunchCategory))}</div>`:""}</td><td>${s.snackCategory?esc(catShort(s.snackCategory)):"—"}${catName(s.snackCategory)?`<div class="student-meta">${esc(catName(s.snackCategory))}</div>`:""}</td><td>${s.status==="withdrawn"?`<span class="status off">Выбыл</span>`:`<span class="status ok">Активен</span>`}</td><td><div class="actions">${canManage?`<button class="btn btn-sm btn-secondary" data-edit-student="${s.id}">Изменить</button>${profile.role==="admin"?`<button class="btn btn-sm btn-secondary" data-transfer="${s.id}">Перевести</button>`:""}${s.status!=="withdrawn"?`<button class="btn btn-sm btn-danger" data-withdraw="${s.id}">Выбыл</button>`:""}`:""}</div></td></tr>`).join("")||`<tr><td colspan="5"><div class="empty">Нет учащихся</div></td></tr>`;
   }
   function bindStudentActions(students,canManage){
     if(!canManage)return;
@@ -366,7 +372,7 @@ window.FOOD_APP = window.FOOD_APP || {};
     $$("[data-withdraw]").forEach(b=>b.onclick=async()=>{const s=students.find(x=>x.id===b.dataset.withdraw);if(confirm(`Отметить "${s.fullName}" как выбывшего?`)){await Service.withdrawStudent(s,profile);toast("Учащийся перемещён в архив");renderClassStudents()}});
     $$("[data-transfer]").forEach(b=>b.onclick=()=>transferModal(students.find(s=>s.id===b.dataset.transfer)));
   }
-  function categoryOptions(list,value,none=true){return `${none?`<option value="">Не получает</option>`:""}${list.map(c=>`<option value="${c.code}" ${value===c.code?"selected":""}>${esc(c.short)} — ${esc(c.name)}</option>`).join("")}`}
+  function categoryOptions(list,value,none=true){return `${none?`<option value="">Не получает</option>`:""}${list.map(c=>`<option value="${c.code}" ${value===c.code?"selected":""}>${esc(c.name ? c.short+" — "+c.name : c.short)}</option>`).join("")}`}
   function studentModal(s){
     showModal(s?"Редактировать учащегося":"Добавить учащегося",`
       <div class="form-grid">

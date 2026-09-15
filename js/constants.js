@@ -5,7 +5,7 @@ FOOD_APP.LUNCH_CATEGORIES = [
   { code: "O_MN", number: 2, short: "О МН (2)",   name: "Многодетные" },
   { code: "O_MO", number: 3, short: "О МО (3)",   name: "Малообеспеченные" },
   { code: "O_UI", number: 4, short: "О УИ (4)",   name: "Ученик-инвалид" },
-  { code: "O_S",  number: 5, short: "О С (5)",    name: "Сирота" },
+  { code: "O_S",  number: 5, short: "О С (5)",    name: "Сельские" },
   { code: "O_RI", number: 6, short: "О РИ (6)",   name: "Родитель-инвалид" },
   { code: "O_SOP",number: 7, short: "О СОП (7)",  name: "СОП" }
 ];
