@@ -311,6 +311,24 @@ window.FOOD_APP = window.FOOD_APP || {};
       });
       return cred.user;
     }
+    async saveTeacherMeal(dateKey,status,actor){
+      const parts=parseDateKey(dateKey);
+      const docId=`${dateKey}_${actor.id}`;
+      const payload={dateKey,...parts,userId:actor.id,userName:actor.displayName||actor.username||"",status,updatedAt:this.FieldValue.serverTimestamp()};
+      await this.db.collection("teacherMeals").doc(docId).set(payload,{merge:true});
+      return payload;
+    }
+    async getTeacherMeal(dateKey,uid){
+      const snap=await this.db.collection("teacherMeals").doc(`${dateKey}_${uid}`).get();
+      return snap.exists?{id:snap.id,...snap.data()}:null;
+    }
+    async getTeacherMealsBetween(startDate,endDate,uid=null){
+      let q=this.db.collection("teacherMeals");
+      if(uid) q=q.where("userId","==",uid);
+      q=q.where("dateKey",">=",startDate).where("dateKey","<=",endDate);
+      const s=await q.get();
+      return s.docs.map(d=>({id:d.id,...d.data()}));
+    }
     async getRecordsBetween(startDate,endDate){
       const s=await this.db.collection("dailyRecords").where("dateKey",">=",startDate).where("dateKey","<=",endDate).get();
       return s.docs.map(d=>({id:d.id,...d.data()}));
@@ -352,6 +370,7 @@ window.FOOD_APP = window.FOOD_APP || {};
         classes:C.DEFAULT_CLASSES.map(x=>({...x,active:true})),
         students:[...students,...students5b],
         records:[], submissions:[], users:[this.currentProfile],
+        teacherMeals:[],
         settings:{...window.APP_CONFIG}
       };
       this.save();
@@ -433,6 +452,13 @@ window.FOOD_APP = window.FOOD_APP || {};
     async getUserProfiles(){return this.data.users}
     async saveUserProfile(d){const i=this.data.users.findIndex(x=>x.id===d.id);if(i>=0)this.data.users[i]={...this.data.users[i],...d};else this.data.users.push(d);this.save()}
     async deleteUserProfile(uid){this.data.users=this.data.users.filter(x=>x.id!==uid);this.save()}
+    async saveTeacherMeal(dateKey,status,actor){
+      const parts=parseDateKey(dateKey), docId=`${dateKey}_${actor.id}`, r={id:docId,dateKey,...parts,userId:actor.id,userName:actor.displayName||actor.username||"",status};
+      if(!this.data.teacherMeals)this.data.teacherMeals=[]; const i=this.data.teacherMeals.findIndex(x=>x.id===docId);
+      if(i>=0)this.data.teacherMeals[i]={...this.data.teacherMeals[i],...r};else this.data.teacherMeals.push(r); this.save(); return r;
+    }
+    async getTeacherMeal(dateKey,uid){return (this.data.teacherMeals||[]).find(x=>x.dateKey===dateKey&&x.userId===uid)||null}
+    async getTeacherMealsBetween(startDate,endDate,uid=null){return (this.data.teacherMeals||[]).filter(x=>x.dateKey>=startDate&&x.dateKey<=endDate&&(!uid||x.userId===uid))}
     async getRecordsBetween(startDate,endDate){return this.data.records.filter(r=>r.dateKey>=startDate&&r.dateKey<=endDate)}
     async log(){}
   }

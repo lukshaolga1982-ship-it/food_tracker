@@ -39,7 +39,7 @@ service cloud.firestore {
     }
 
     match /users/{uid} {
-      allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
+      allow read: if signedIn() && (request.auth.uid == uid || isAdmin() || isFood());
       allow create: if isAdmin() || (signedIn() && request.auth.uid == uid && request.resource.data.role == "teacher" && request.resource.data.classIds.size() == 0);
       allow update, delete: if isAdmin();
     }
@@ -80,6 +80,16 @@ service cloud.firestore {
           && request.resource.data.studentId == resource.data.studentId
           && request.resource.data.dateKey == resource.data.dateKey);
 
+      allow delete: if isAdmin();
+    }
+
+    match /teacherMeals/{mealId} {
+      allow read: if isAdmin() || isFood() || (isTeacher() && resource.data.userId == request.auth.uid);
+      allow create: if isTeacher() && request.resource.data.userId == request.auth.uid
+        && request.resource.data.status in ["eating", "not_eating"];
+      allow update: if isTeacher() && resource.data.userId == request.auth.uid
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.status in ["eating", "not_eating"];
       allow delete: if isAdmin();
     }
 

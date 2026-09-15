@@ -127,6 +127,9 @@ window.FOOD_APP = window.FOOD_APP || {};
 
   async function enterApp(user){
     profile=await Service.getProfile(user.uid);
+    if(!profile && !Service.isDemo()){
+      for(let i=0;i<4 && !profile;i++){ await new Promise(r=>setTimeout(r,250)); profile=await Service.getProfile(user.uid); }
+    }
     if(!profile){
       if(Service.isDemo()) profile=Service.currentProfile;
       else{
@@ -151,6 +154,7 @@ window.FOOD_APP = window.FOOD_APP || {};
   function applyRoleVisibility(){
     $$(".role-admin").forEach(el=>el.classList.toggle("hidden",profile.role!=="admin"));
     $$(".role-admin-food").forEach(el=>el.classList.toggle("hidden",!["admin","food"].includes(profile.role)));
+    $$(".role-teacher").forEach(el=>el.classList.toggle("hidden",profile.role!=="teacher"));
   }
   let shellBound=false;
   function bindShell(){
@@ -172,6 +176,7 @@ window.FOOD_APP = window.FOOD_APP || {};
       else if(r==="reports" && ["admin","food"].includes(profile.role)) await renderReports();
       else if(r==="import" && profile.role==="admin") await renderImport();
       else if(r==="admin" && profile.role==="admin") await renderAdmin();
+      else if(r==="teacherMeals" && profile.role==="teacher") await renderTeacherMeals();
       else if(r==="class") await renderClassPage();
       else await renderDashboard();
     }catch(e){
@@ -211,6 +216,7 @@ window.FOOD_APP = window.FOOD_APP || {};
   }
 
   async function renderDashboard(){
+    if(profile.role==="teacher" && !(profile.classIds||[]).length){ await renderTeacherMeals(); return; }
     setTitle("Главная","Ежедневный контроль питания");
     const d=await dashboardData(selectedDate);
     const subMap=new Map(d.submissions.map(x=>[x.classId,x]));
@@ -248,6 +254,39 @@ window.FOOD_APP = window.FOOD_APP || {};
     const ss=students.filter(s=>s.classId===c.id);let l=0,p=0,a=0;
     ss.forEach(s=>{const st=defaultStatuses(s,recMap.get(s.id));if(st.lunch==="eating")l++;if(st.snack==="eating")p++;if(st.lunch==="absent"||st.snack==="absent")a++});
     return `<tr><td><button class="link-btn" data-open-class="${c.id}">${esc(c.name)}</button></td><td class="text-right">${ss.length}</td><td class="text-right">${l}</td><td class="text-right">${p}</td><td class="text-right">${a}</td><td>${submission?`<span class="status ok">✓ Передано</span>`:`<span class="status pending">Не передано</span>`}</td></tr>`;
+  }
+
+  async function renderTeacherMeals(){
+    setTitle("Моё питание","Личный кабинет педагога — только обеды");
+    const month=selectedMonth||todayKey().slice(0,7);
+    const [y,m]=month.split("-").map(Number);
+    const days=dayCount(y,m);
+    const start=`${month}-01`, end=`${month}-${String(days).padStart(2,"0")}`;
+    const records=await Service.getTeacherMealsBetween(start,end,profile.id);
+    const map=new Map(records.map(r=>[r.dateKey,r]));
+    const today=todayKey();
+    const rows=Array.from({length:days},(_,i)=>{
+      const d=`${month}-${String(i+1).padStart(2,"0")}`, r=map.get(d), disabled=d<today;
+      const status=r?.status||"not_eating";
+      return `<tr><td>${String(i+1).padStart(2,"0")}.${String(m).padStart(2,"0")}.${y}</td><td>${isWeekend(y,m,i+1)?"Выходной":"Рабочий день"}</td><td>
+        <div class="segment ${disabled||isWeekend(y,m,i+1)?"disabled":""}" data-teacher-day="${d}">
+          <button data-tmeal="eating" class="${status==="eating"?"active":""}">✓ Буду обедать</button>
+          <button data-tmeal="not_eating" class="${status!=="eating"?"active":""}">– Не буду</button>
+        </div></td></tr>`;
+    }).join("");
+    const eating=records.filter(r=>r.status==="eating").length;
+    const workingEating=records.filter(r=>r.status==="eating"&&!isWeekend(y,m,r.day)).length;
+    const profileName=profile.displayName||profile.username||"Педагог";
+    $("#content").innerHTML=`
+      <div class="grid-kpi">${kpi("Обеды за месяц",eating,"cream")}${kpi("Рабочие дни",workingEating,"green")}</div>
+      <div class="card"><div class="card-header"><div><h3>${esc(profileName)}</h3><div class="muted">Отметьте, будете ли вы обедать. Другие виды питания для педагогов не учитываются.</div></div>
+        <div class="field compact"><span>Месяц</span><input id="teacherMealMonth" type="month" value="${month}"></div></div>
+        <div class="table-wrap"><table><thead><tr><th>Дата</th><th>Тип дня</th><th>Питание</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+    $("#teacherMealMonth").onchange=e=>{selectedMonth=e.target.value;renderTeacherMeals()};
+    $$('[data-tmeal]').forEach(btn=>btn.onclick=async()=>{
+      const seg=btn.closest("[data-teacher-day]"), date=seg.dataset.teacherDay, status=btn.dataset.tmeal;
+      try{await Service.saveTeacherMeal(date,status,profile); toast(status==="eating"?"Обед отмечен":"Обед отменён"); renderTeacherMeals();}catch(e){toast(e.message,"error")}
+    });
   }
 
   async function renderClasses(){
@@ -407,6 +446,30 @@ window.FOOD_APP = window.FOOD_APP || {};
   }
   function transferModal(s){
     showModal("Перевести в другой класс",`<p><b>${esc(s.fullName)}</b></p><label><span>Новый класс</span><select id="mTransfer">${classes.filter(c=>c.id!==s.classId).map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join("")}</select></label>`,async()=>{await Service.transferStudent(s,$("#mTransfer").value,profile);toast("Учащийся переведён");await renderClassStudents();return true});
+  }
+
+  async function renderFoodSummary(){
+    setTitle("Сводная педагогов","Кто будет обедать в выбранном месяце");
+    const month=selectedMonth||todayKey().slice(0,7), [y,m]=month.split("-").map(Number), days=dayCount(y,m);
+    const start=`${month}-01`, end=`${month}-${String(days).padStart(2,"0")}`;
+    const records=await Service.getTeacherMealsBetween(start,end);
+    const users=await Service.getUserProfiles();
+    const teachers=users.filter(u=>u.role==="teacher"&&u.active!==false);
+    const byUser=new Map(teachers.map(u=>[u.id,u]));
+    const map=new Map(records.map(r=>[`${r.userId}_${r.dateKey}`,r]));
+    const dates=Array.from({length:days},(_,i)=>`${month}-${String(i+1).padStart(2,"0")}`);
+    const rows=teachers.map(t=>{const vals=dates.map(d=>map.get(`${t.id}_${d}`)?.status==="eating"?"✓":"—");return `<tr><td>${esc(t.displayName||t.username||"")}</td>${vals.map(v=>`<td class="text-center">${v}</td>`).join("")}<td class="text-right"><b>${vals.filter(v=>v==="✓").length}</b></td></tr>`}).join("");
+    const totalByDay=dates.map(d=>records.filter(r=>r.dateKey===d&&r.status==="eating").length);
+    const total=records.filter(r=>r.status==="eating").length;
+    $("#content").innerHTML=`<div class="page-actions"><div class="field compact"><span>Месяц</span><input id="foodTeacherMonth" type="month" value="${month}"></div><div class="notice success">Всего отмечено обедов: <b>${total}</b></div><button id="exportTeacherMeals" class="btn btn-secondary">⇩ Excel</button></div>
+      <div class="card"><div class="card-header"><div><h3>Педагоги — обеды</h3><div class="muted">✓ — педагог планирует обедать, — — не отмечено/не будет.</div></div></div>
+      <div class="table-wrap"><table><thead><tr><th>Педагог</th>${dates.map(d=>`<th class="text-center">${Number(d.slice(-2))}</th>`).join("")}<th>Итого</th></tr></thead><tbody>${rows||`<tr><td colspan="${days+2}" class="empty">Зарегистрированных педагогов пока нет.</td></tr>`}</tbody><tfoot><tr><th>Всего обедов</th>${totalByDay.map(v=>`<th class="text-center">${v||0}</th>`).join("")}<th>${total}</th></tr></tfoot></table></div></div>`;
+    $("#foodTeacherMonth").onchange=e=>{selectedMonth=e.target.value;renderFoodSummary()};
+    $("#exportTeacherMeals").onclick=()=>{
+      const header=["Педагог",...dates.map(d=>Number(d.slice(-2))),"Итого"];
+      const aoa=[[`Педагоги — обеды за ${month}`],header,...teachers.map(t=>{const vals=dates.map(d=>map.get(`${t.id}_${d}`)?.status==="eating"?"✓":"—");return [t.displayName||t.username||"",...vals,vals.filter(v=>v==="✓").length]})];
+      aoaToBook(`Педагоги_обеды_${month}.xlsx`,{"Обеды":aoa});
+    };
   }
 
   async function renderSummary(){
@@ -608,7 +671,7 @@ window.FOOD_APP = window.FOOD_APP || {};
       <label class="full"><span>UID из Firebase Authentication</span><input id="mUid" value="${esc(u?.id||"")}" ${u?"disabled":""}></label>
       <label><span>Логин</span><input id="mUsername" value="${esc(u?.username||"")}"></label>
       <label><span>Отображаемое имя</span><input id="mDisplayName" value="${esc(u?.displayName||"")}"></label>
-      <label><span>Роль</span><select id="mRole"><option value="teacher" ${u?.role==="teacher"?"selected":""}>Классный руководитель</option><option value="food" ${u?.role==="food"?"selected":""}>Ответственный за питание</option><option value="admin" ${u?.role==="admin"?"selected":""}>Администратор</option></select></label>
+      <label><span>Роль</span><select id="mRole"><option value="teacher" ${u?.role==="teacher"?"selected":""}>Педагог</option><option value="food" ${u?.role==="food"?"selected":""}>Ответственный за питание</option><option value="admin" ${u?.role==="admin"?"selected":""}>Администратор</option></select></label>
       <div class="full"><span class="label">Доступ к классам</span><div class="class-grid">${classes.map(c=>`<label style="display:flex;gap:8px;align-items:center;border:1px solid var(--border);padding:9px;border-radius:10px"><input class="checkbox user-class" type="checkbox" value="${c.id}" ${(u?.classIds||[]).includes(c.id)?"checked":""}><b>${esc(c.name)}</b></label>`).join("")}</div></div>
     </div>`,async()=>{
       const uid=u?.id||$("#mUid").value.trim();if(!uid){toast("Введите UID","error");return false}
