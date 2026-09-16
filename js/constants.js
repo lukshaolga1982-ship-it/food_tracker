@@ -7,14 +7,16 @@ FOOD_APP.LUNCH_CATEGORIES = [
   { code: "O_UI", number: 4, short: "О УИ (4)",   name: "Ученик-инвалид" },
   { code: "O_S",  number: 5, short: "О С (5)",    name: "Сельские" },
   { code: "O_RI", number: 6, short: "О РИ (6)",   name: "Родитель-инвалид" },
-  { code: "O_SOP",number: 7, short: "О СОП (7)",  name: "СОП" }
+  { code: "O_SOP",number: 7, short: "О СОП (7)",  name: "СОП" },
+  { code: "O_D",  number: 8, short: "О Д (8)",   name: "Диетическое питание" }
 ];
 
 FOOD_APP.SNACK_CATEGORIES = [
   { code: "P",    number: 1, short: "П (1)",      name: "За родительскую плату" },
   { code: "P_MN", number: 2, short: "П МН (2)",   name: "Многодетные" },
   { code: "P_MO", number: 3, short: "П МО (3)",   name: "Малообеспеченные" },
-  { code: "P_UI", number: 4, short: "П УИ (4)",   name: "Ученик-инвалид" }
+  { code: "P_UI", number: 4, short: "П УИ (4)",   name: "Ученик-инвалид" },
+  { code: "P_D",  number: 5, short: "П Д (5)",    name: "Диетическое питание" }
 ];
 
 FOOD_APP.DEFAULT_CLASSES = [

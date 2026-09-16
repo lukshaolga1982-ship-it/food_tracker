@@ -20,11 +20,15 @@ window.FOOD_APP = window.FOOD_APP || {};
     if(profile?.role==="admin") return true;
     if(profile?.role!=="teacher") return false;
     const n=nowParts();
-    // Классный руководитель редактирует только текущий день и только до дедлайна.
-    // Нажатие «Сведения переданы» не блокирует повторное редактирование до 09:00.
-    if(dateKey!==n.dateKey) return false;
-    const [h,m]=(settings?.editDeadline||"09:00").split(":").map(Number);
-    return n.hour<h || (n.hour===h && n.minute<m);
+    const deadline=settings?.editDeadline||"09:00";
+    const futureOpen=settings?.futureEditTime||"10:00";
+    const [dh,dm]=deadline.split(":").map(Number);
+    const [fh,fm]=futureOpen.split(":").map(Number);
+    const beforeDeadline=n.hour<dh || (n.hour===dh && n.minute<dm);
+    const afterFutureOpen=n.hour>fh || (n.hour===fh && n.minute>=fm);
+    if(dateKey===n.dateKey) return beforeDeadline;
+    if(dateKey>n.dateKey) return afterFutureOpen;
+    return false;
   }
   function roleLabel(){return C.ROLE_LABELS[profile?.role]||profile?.role||"—";}
   function catName(code){return C.categoryByCode(code)?.name||"";}
@@ -333,14 +337,14 @@ window.FOOD_APP = window.FOOD_APP || {};
     const submitted=subs.find(x=>x.classId===currentClassId);
     const map=new Map(records.map(r=>[r.studentId,r]));
     const editable=canEditDate(selectedDate);
-    const n=nowParts(), deadline=settings?.editDeadline||"09:00";
+    const n=nowParts(), deadline=settings?.editDeadline||"09:00", futureOpen=settings?.futureEditTime||"10:00";
     let banner;
     if(profile.role==="teacher"){
       const isPast=selectedDate<n.dateKey;
       const isFuture=selectedDate>n.dateKey;
       banner=editable
-        ?`<div class="deadline-banner open"><div><b>${submitted?"✓ Сведения переданы — можно исправлять до "+deadline:"Редактирование открыто до "+deadline}</b><div class="muted">${submitted?"После изменения отметок нажмите «Обновить сведения».":"Текущий день: "+fmtDate(selectedDate)}</div></div>${submitted?`<span class="status ok">✓ Передано</span>`:""}</div>`
-        :`<div class="deadline-banner locked"><div><b>🔒 Редактирование закрыто</b><div class="muted">${isPast?"Прошедшие дни доступны только для просмотра.":isFuture?"Будущие дни пока доступны только для просмотра.":"Сегодня редактирование закрыто после "+deadline+"."}</div></div></div>`;
+        ?`<div class="deadline-banner open"><div><b>${isFuture?"✓ Редактирование будущей даты открыто с "+futureOpen:submitted?"✓ Сведения переданы — можно исправлять до "+deadline:"Редактирование открыто до "+deadline}</b><div class="muted">${isFuture?"Можно заранее указать питание на будущий день.":submitted?"После изменения отметок нажмите «Обновить сведения».":"Текущий день: "+fmtDate(selectedDate)}</div></div>${submitted?`<span class="status ok">✓ Передано</span>`:""}</div>`
+        :`<div class="deadline-banner locked"><div><b>🔒 Редактирование закрыто</b><div class="muted">${isPast?"Прошедшие дни доступны только для просмотра.":isFuture?"Будущие дни будут доступны для редактирования с "+futureOpen+". В период с "+deadline+" до "+futureOpen+" редактирование закрыто.":"Сегодня редактирование закрыто после "+deadline+"."}</div></div></div>`;
     }else{
       banner=`<div class="deadline-banner ${profile.role==="admin"?"open":"locked"}"><div><b>${profile.role==="admin"?"Режим администратора":"Режим просмотра"}</b><div class="muted">${profile.role==="admin"?"Администратор может исправлять данные в любое время. После исправления нажмите «Обновить сведения».":"Ответственный за питание просматривает сведения без изменения."}</div></div></div>`;
     }
@@ -387,7 +391,7 @@ window.FOOD_APP = window.FOOD_APP || {};
       }catch(e){
         const msg=String(e?.message||e);
         toast(msg.toLowerCase().includes("permission")
-          ?"Firebase не разрешил изменение. Администратору нужно опубликовать актуальные Firestore Rules; классному руководителю редактирование доступно только до 09:00."
+          ?"Firebase не разрешил изменение. Администратору нужно опубликовать актуальные Firestore Rules; классному руководителю: текущий день доступен до 09:00, будущие дни — после 10:00."
           :msg,"error");
       }
     });
@@ -446,7 +450,7 @@ window.FOOD_APP = window.FOOD_APP || {};
     bindStudentActions(students,canManage);
   }
   function studentRows(students,canManage){
-    return students.map(s=>`<tr><td><b>${esc(s.fullName)}</b>${s.dietary?`<div class="student-meta">Диетическое питание</div>`:""}</td><td>${esc(catShort(s.lunchCategory))}${catName(s.lunchCategory)?`<div class="student-meta">${esc(catName(s.lunchCategory))}</div>`:""}</td><td>${s.snackCategory?esc(catShort(s.snackCategory)):"—"}${catName(s.snackCategory)?`<div class="student-meta">${esc(catName(s.snackCategory))}</div>`:""}</td><td>${s.status==="withdrawn"?`<span class="status off">Выбыл</span>`:`<span class="status ok">Активен</span>`}</td><td><div class="actions">${canManage?`<button class="btn btn-sm btn-secondary" data-edit-student="${s.id}">Изменить</button>${profile.role==="admin"?`<button class="btn btn-sm btn-secondary" data-transfer="${s.id}">Перевести</button>`:""}${s.status!=="withdrawn"?`<button class="btn btn-sm btn-danger" data-withdraw="${s.id}">Выбыл</button>`:""}`:""}</div></td></tr>`).join("")||`<tr><td colspan="5"><div class="empty">Нет учащихся</div></td></tr>`;
+    return students.map(s=>`<tr><td><b>${esc(s.fullName)}</b></td><td>${esc(catShort(s.lunchCategory))}${catName(s.lunchCategory)?`<div class="student-meta">${esc(catName(s.lunchCategory))}</div>`:""}</td><td>${s.snackCategory?esc(catShort(s.snackCategory)):"—"}${catName(s.snackCategory)?`<div class="student-meta">${esc(catName(s.snackCategory))}</div>`:""}</td><td>${s.status==="withdrawn"?`<span class="status off">Выбыл</span>`:`<span class="status ok">Активен</span>`}</td><td><div class="actions">${canManage?`<button class="btn btn-sm btn-secondary" data-edit-student="${s.id}">Изменить</button>${profile.role==="admin"?`<button class="btn btn-sm btn-secondary" data-transfer="${s.id}">Перевести</button>`:""}${s.status!=="withdrawn"?`<button class="btn btn-sm btn-danger" data-withdraw="${s.id}">Выбыл</button>`:""}`:""}</div></td></tr>`).join("")||`<tr><td colspan="5"><div class="empty">Нет учащихся</div></td></tr>`;
   }
   function bindStudentActions(students,canManage){
     if(!canManage)return;
@@ -456,19 +460,25 @@ window.FOOD_APP = window.FOOD_APP || {};
   }
   function categoryOptions(list,value,none=true){return `${none?`<option value="">Не получает</option>`:""}${list.map(c=>`<option value="${c.code}" ${value===c.code?"selected":""}>${esc(c.name ? c.short+" — "+c.name : c.short)}</option>`).join("")}`}
   function studentModal(s){
+    // Старые записи с dietary:true переводим в отдельную категорию при следующем сохранении.
+    const legacyDiet=s?.dietary===true;
+    const lunchValue=legacyDiet ? "O_D" : s?.lunchCategory;
+    const snackValue=legacyDiet ? (s?.snackCategory ? "P_D" : null) : s?.snackCategory;
     showModal(s?"Редактировать учащегося":"Добавить учащегося",`
       <div class="form-grid">
         <label class="full"><span>ФИО</span><input id="mFullName" value="${esc(s?.fullName||"")}" placeholder="Фамилия Имя" required></label>
-        <label><span>Категория обеда</span><select id="mLunch">${categoryOptions(C.LUNCH_CATEGORIES,s?.lunchCategory)}</select></label>
-        <label><span>Категория полдника</span><select id="mSnack">${categoryOptions(C.SNACK_CATEGORIES,s?.snackCategory)}</select></label>
-        <label class="full" style="display:flex;align-items:center;gap:10px"><input id="mDietary" class="checkbox" type="checkbox" ${s?.dietary?"checked":""}> <span>Получает диетическое питание</span></label>
+        <label><span>Категория обеда</span><select id="mLunch">${categoryOptions(C.LUNCH_CATEGORIES,lunchValue)}</select></label>
+        <label><span>Категория полдника</span><select id="mSnack">${categoryOptions(C.SNACK_CATEGORIES,snackValue)}</select></label>
+        <div class="notice full"><b>Диетическое питание</b> является отдельной категорией. Его нельзя выбрать дополнительно к основной категории.</div>
       </div>`,
       async()=>{
         const fullName=$("#mFullName").value.trim();if(!fullName){toast("Введите ФИО","error");return false}
-        await Service.saveStudent({...(s||{}),fullName,classId:currentClassId,lunchCategory:$("#mLunch").value||null,snackCategory:$("#mSnack").value||null,dietary:$("#mDietary").checked,status:s?.status||"active"},profile);
+        const lunch=$("#mLunch").value||null, snack=$("#mSnack").value||null;
+        await Service.saveStudent({...s||{},fullName,classId:currentClassId,lunchCategory:lunch,snackCategory:snack,dietary:lunch==="O_D"||snack==="P_D",status:s?.status||"active"},profile);
         toast(s?"Данные обновлены":"Учащийся добавлен");await renderClassStudents();return true;
       });
   }
+
   function transferModal(s){
     showModal("Перевести в другой класс",`<p><b>${esc(s.fullName)}</b></p><label><span>Новый класс</span><select id="mTransfer">${classes.filter(c=>c.id!==s.classId).map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join("")}</select></label>`,async()=>{await Service.transferStudent(s,$("#mTransfer").value,profile);toast("Учащийся переведён");await renderClassStudents();return true});
   }
@@ -641,7 +651,7 @@ window.FOOD_APP = window.FOOD_APP || {};
       add(`${cls.name} Завтраки`,`${cls.name} — завтраки за родительскую плату ${range.label}`,students.filter(s=>s.classId===cls.id&&s.lunchCategory==="O"),"lunch",()=>true);
       add(`${cls.name} Полдники`,`${cls.name} — полдники за родительскую плату ${range.label}`,students.filter(s=>s.classId===cls.id&&s.snackCategory==="P"),"snack",()=>true);
     });
-    if(type==="all"||type==="diet"){const diet=students.filter(s=>s.dietary);add("Диеты Завтраки",`Диетическое питание — завтраки ${range.label}`,diet,"lunch",()=>true);add("Диеты Полдники",`Диетическое питание — полдники ${range.label}`,diet,"snack",()=>true)}
+    if(type==="all"||type==="diet"){add("Диеты Завтраки",`Диетическое питание — завтраки ${range.label}`,students.filter(s=>s.lunchCategory==="O_D"),"lunch",()=>true);add("Диеты Полдники",`Диетическое питание — полдники ${range.label}`,students.filter(s=>s.snackCategory==="P_D"),"snack",()=>true)}
     const gs={benefit5:{name:"5А–5Б",ids:["5a","5b"]},benefit68:{name:"6–8",ids:["6a","6b","7a","7b","8a","8b"]},benefit911:{name:"9–11",ids:["9","10","11"]}};
     const wanted=type==="all"?["benefit5","benefit68","benefit911"]:gs[type]?[type]:[];
     wanted.forEach(k=>{const g=gs[k],base=students.filter(s=>g.ids.includes(s.classId));add(`Льготные ${g.name} Завтраки`,`Льготные — ${g.name} — завтраки ${range.label}`,base,"lunch",s=>s.lunchCategory&&s.lunchCategory!=="O");add(`Льготные ${g.name} Полдники`,`Льготные — ${g.name} — полдники ${range.label}`,base,"snack",s=>s.snackCategory&&s.snackCategory!=="P")});
@@ -664,9 +674,8 @@ window.FOOD_APP = window.FOOD_APP || {};
       sheets[`${cls.name} Полдники`]=listReportSheet(`${cls.name} — полдники за родительскую плату ${range.label}`,students.filter(s=>s.classId===cls.id&&s.snackCategory==="P"),records,dates,"snack",()=>true);
     });
     const addDiet=()=>{
-      const diet=students.filter(s=>s.dietary);
-      sheets["Диеты Завтраки"]=listReportSheet(`Диетическое питание — завтраки ${range.label}`,diet,records,dates,"lunch",()=>true);
-      sheets["Диеты Полдники"]=listReportSheet(`Диетическое питание — полдники ${range.label}`,diet,records,dates,"snack",()=>true);
+      sheets["Диеты Завтраки"]=listReportSheet(`Диетическое питание — завтраки ${range.label}`,students.filter(s=>s.lunchCategory==="O_D"),records,dates,"lunch",()=>true);
+      sheets["Диеты Полдники"]=listReportSheet(`Диетическое питание — полдники ${range.label}`,students.filter(s=>s.snackCategory==="P_D"),records,dates,"snack",()=>true);
     };
     const addBenefits=(g)=>{
       const base=students.filter(s=>g.ids.includes(s.classId));

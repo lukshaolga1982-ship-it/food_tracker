@@ -14,5 +14,6 @@ window.APP_CONFIG = {
   usernameDomain: "braslav-gym.by",
   timezone: "Europe/Minsk",
   editDeadline: "09:00",
+  futureEditTime: "10:00",
   academicYear: "2026/2027"
 };

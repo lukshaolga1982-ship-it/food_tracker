@@ -27,14 +27,24 @@ service cloud.firestore {
       return isTeacher() && classId in userData().classIds;
     }
 
-    // 09:00 в Беларуси = 06:00 UTC.
-    // Учитель может менять только сегодняшний день и только до 09:00.
-    function teacherBeforeDeadline(data) {
+    // Беларусь использует UTC+3.
+    // Текущий день: редактирование до 09:00 по Минску (до 06:00 UTC).
+    // Будущие дни: редактирование открывается после 10:00 по Минску (с 07:00 UTC).
+    function teacherCanEditDate(data) {
       return teacherHasClass(data.classId)
-        && data.year == request.time.year()
-        && data.month == request.time.month()
-        && data.day == request.time.day()
-        && request.time.hours() < 6;
+        && (
+          (data.year == request.time.year()
+            && data.month == request.time.month()
+            && data.day == request.time.day()
+            && request.time.hours() < 6)
+          ||
+          (
+            (data.year > request.time.year()
+              || (data.year == request.time.year() && data.month > request.time.month())
+              || (data.year == request.time.year() && data.month == request.time.month() && data.day > request.time.day()))
+            && request.time.hours() >= 7
+          )
+        );
     }
 
     match /users/{uid} {
@@ -80,11 +90,11 @@ service cloud.firestore {
         || (isTeacher() && teacherHasClass(resource.data.classId));
 
       allow create: if isAdmin()
-        || (isTeacher() && teacherBeforeDeadline(request.resource.data));
+        || (isTeacher() && teacherCanEditDate(request.resource.data));
 
       allow update: if isAdmin()
         || (isTeacher()
-          && teacherBeforeDeadline(resource.data)
+          && teacherCanEditDate(resource.data)
           && request.resource.data.classId == resource.data.classId
           && request.resource.data.studentId == resource.data.studentId
           && request.resource.data.dateKey == resource.data.dateKey);
@@ -97,11 +107,11 @@ service cloud.firestore {
         || (isTeacher() && teacherHasClass(resource.data.classId));
 
       allow create: if isAdmin()
-        || (isTeacher() && teacherBeforeDeadline(request.resource.data));
+        || (isTeacher() && teacherCanEditDate(request.resource.data));
 
       allow update: if isAdmin()
         || (isTeacher()
-          && teacherBeforeDeadline(resource.data)
+          && teacherCanEditDate(resource.data)
           && request.resource.data.classId == resource.data.classId
           && request.resource.data.dateKey == resource.data.dateKey);
 
