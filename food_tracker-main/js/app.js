@@ -790,8 +790,8 @@ window.FOOD_APP = window.FOOD_APP || {};
       </div>
 
       <div class="card"><div class="card-header"><h3>Профили пользователей</h3><button id="addProfileBtn" class="btn btn-sm btn-primary">+ Профиль</button></div>
-        <div class="card-body"><div class="notice warning"><b>Важно:</b> зарегистрированный педагог появится здесь автоматически. Нажмите «Назначить классы», чтобы открыть ему доступ к одному или нескольким классам. После сохранения педагог сможет отмечать питание своего класса и своё личное питание.</div></div>
-        <div class="table-wrap"><table><thead><tr><th>Имя</th><th>Логин</th><th>Роль</th><th>Классы</th><th></th></tr></thead><tbody>${users.map(u=>`<tr><td>${esc(u.displayName||"")}</td><td>${esc(u.username||"")}</td><td>${esc(C.ROLE_LABELS[u.role]||u.role)}</td><td>${(u.classIds||[]).map(id=>esc(classById(id)?.name||id)).join(", ")||"—"}</td><td><button class="btn btn-sm btn-secondary" data-edit-user="${u.id}">Изменить</button>${u.role==="teacher"?`<button class="btn btn-sm btn-primary" data-assign-user="${u.id}">Назначить классы</button>`:""}${u.id!==profile.id?`<button class="btn btn-sm btn-danger" data-delete-user="${u.id}">Удалить</button>`:""}</td></tr>`).join("")}</tbody></table></div>
+        <div class="card-body"><div class="notice warning"><b>Важно:</b> аккаунт с логином и паролем сначала создаётся в Firebase Authentication. Здесь к его UID привязываются роль и классы.</div></div>
+        <div class="table-wrap"><table><thead><tr><th>Имя</th><th>Логин</th><th>Роль</th><th>Классы</th><th></th></tr></thead><tbody>${users.map(u=>`<tr><td>${esc(u.displayName||"")}</td><td>${esc(u.username||"")}</td><td>${esc(C.ROLE_LABELS[u.role]||u.role)}</td><td>${(u.classIds||[]).map(id=>esc(classById(id)?.name||id)).join(", ")||"—"}</td><td><button class="btn btn-sm btn-secondary" data-edit-user="${u.id}">Изменить</button>${u.id!==profile.id?`<button class="btn btn-sm btn-danger" data-delete-user="${u.id}">Удалить</button>`:""}</td></tr>`).join("")}</tbody></table></div>
       </div>`;
     $("#saveSettingsBtn").onclick=async()=>{await Service.saveSettings({academicYear:$("#setYear").value.trim(),editDeadline:$("#setDeadline").value,timezone:window.APP_CONFIG.timezone});settings=await Service.getSettings();toast("Настройки сохранены")};
     if($("#seedClassesBtn"))$("#seedClassesBtn").onclick=async()=>{await Service.seedDefaultClasses();classes=await Service.getClasses();toast("Классы созданы");renderAdmin()};
@@ -799,7 +799,6 @@ window.FOOD_APP = window.FOOD_APP || {};
     $$("[data-edit-class]").forEach(b=>b.onclick=()=>classModal(allClasses.find(c=>c.id===b.dataset.editClass)));
     $("#addProfileBtn").onclick=()=>userProfileModal(null);
     $$("[data-edit-user]").forEach(b=>b.onclick=()=>userProfileModal(users.find(u=>u.id===b.dataset.editUser)));
-    $$(`[data-assign-user]`).forEach(b=>b.onclick=()=>userProfileModal(users.find(u=>u.id===b.dataset.assignUser)));
   }
   function classModal(c){
     showModal(c?"Редактировать класс":"Добавить класс",`<div class="form-grid"><label><span>ID класса (латиницей)</span><input id="mClassId" value="${esc(c?.id||"")}" ${c?"disabled":""} placeholder="например, 5a"></label><label><span>Название</span><input id="mClassName" value="${esc(c?.name||"")}" placeholder="5А"></label><label><span>Порядок</span><input id="mClassOrder" type="number" value="${c?.order||0}"></label><label><span>Статус</span><select id="mClassActive"><option value="1" ${c?.active!==false?"selected":""}>Активен</option><option value="0" ${c?.active===false?"selected":""}>Скрыт</option></select></label></div>`,async()=>{

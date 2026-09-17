@@ -27,29 +27,22 @@ service cloud.firestore {
       return isTeacher() && classId in userData().classIds;
     }
 
-    // Время в Firebase request.time — UTC. Для Браслава используем UTC+3.
-    // Поэтому все проверки дедлайна делаем относительно Минска/Браслава,
-    // а не относительно часового пояса браузера пользователя.
-    function nowMinsk() {
-      return request.time + duration.value(3, 'h');
-    }
-
+    // Беларусь использует UTC+3.
+    // Текущий день: редактирование до 09:00 по Минску (до 06:00 UTC).
+    // Будущие дни: редактирование открывается после 10:00 по Минску (с 07:00 UTC).
     function teacherCanEditDate(data) {
-      let now = nowMinsk();
       return teacherHasClass(data.classId)
         && (
-          // Текущий день: до 09:00 по Браславу.
-          (data.year == now.year()
-            && data.month == now.month()
-            && data.day == now.day()
-            && now.hours() < 9)
+          (data.year == request.time.year()
+            && data.month == request.time.month()
+            && data.day == request.time.day()
+            && request.time.hours() < 6)
           ||
-          // Будущие дни: с 10:00 по Браславу.
           (
-            (data.year > now.year()
-              || (data.year == now.year() && data.month > now.month())
-              || (data.year == now.year() && data.month == now.month() && data.day > now.day()))
-            && now.hours() >= 10
+            (data.year > request.time.year()
+              || (data.year == request.time.year() && data.month > request.time.month())
+              || (data.year == request.time.year() && data.month == request.time.month() && data.day > request.time.day()))
+            && request.time.hours() >= 7
           )
         );
     }

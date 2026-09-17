@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#2f6d37" />
+  <meta name="description" content="Учёт питания учащихся Браславской гимназии" />
+  <title>Учёт питания — Браславская гимназия</title>
+  <link rel="icon" href="assets/logo.png?v=4" />
+  <link rel="stylesheet" href="css/styles.css?v=6" />
+</head>
+<body>
+  <div id="setupScreen" class="screen hidden"></div>
+
+  <div id="loginScreen" class="screen login-screen hidden">
+    <div class="login-card">
+      <img src="assets/logo.png?v=4" class="login-logo" alt="Логотип гимназии" />
+      <div>
+        <h1>Учёт питания</h1>
+        <p class="muted">Браславская гимназия</p>
+      </div>
+      <form id="loginForm" class="stack">
+        <label>
+          <span>Логин</span>
+          <input id="loginUsername" autocomplete="username" placeholder="например, 5a_teacher" required />
+        </label>
+        <label>
+          <span>Пароль</span>
+          <input id="loginPassword" type="password" autocomplete="current-password" required />
+        </label>
+        <button class="btn btn-primary btn-lg" type="submit">Войти</button>
+      </form>
+      <button id="teacherRegisterBtn" class="btn btn-secondary btn-block" style="margin-top:10px">Регистрация педагога</button>
+      <p id="loginError" class="form-error hidden"></p>
+    </div>
+  </div>
+
+  <div id="appShell" class="app-shell hidden">
+    <aside class="sidebar">
+      <div class="brand">
+        <img src="assets/logo.png?v=4" alt="" />
+        <div>
+          <strong>Учёт питания</strong>
+          <small>Браславская гимназия</small>
+        </div>
+      </div>
+
+      <nav id="mainNav" class="nav">
+        <button data-route="dashboard" class="nav-item active"><span>⌂</span> Главная</button>
+        <button data-route="classes" class="nav-item"><span>▦</span> Классы</button>
+        <button data-route="summary" class="nav-item role-admin-food"><span>Σ</span> Сводная</button>
+        <button data-route="teachers" class="nav-item role-admin-food"><span>♟</span> Педагоги</button>
+        <button data-route="reports" class="nav-item role-admin-food"><span>⇩</span> Отчёты</button>
+        <button data-route="import" class="nav-item role-admin"><span>⇧</span> Импорт</button>
+        <button data-route="admin" class="nav-item role-admin"><span>⚙</span> Настройки</button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="user-chip">
+          <div class="avatar" id="userAvatar">А</div>
+          <div class="user-chip-text">
+            <strong id="userName">Пользователь</strong>
+            <small id="userRole">—</small>
+          </div>
+        </div>
+        <button id="logoutBtn" class="btn btn-ghost btn-block">Выйти</button>
+      </div>
+    </aside>
+
+    <div class="app-main">
+      <header class="topbar">
+        <div>
+          <h2 id="pageTitle">Главная</h2>
+          <p id="pageSubtitle" class="muted"></p>
+        </div>
+        <div class="topbar-actions">
+          <button id="refreshBtn" class="btn btn-secondary">↻ Обновить</button>
+        </div>
+      </header>
+      <main id="content" class="content"></main>
+    </div>
+  </div>
+
+  <div id="modalRoot"></div>
+  <div id="toastRoot" class="toast-root"></div>
+
+  <!-- Firebase compat SDK: keeps GitHub Pages deployment build-free. -->
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+  <script src="js/firebase-config.js?v=5"></script>
+  <script src="js/constants.js?v=5"></script>
+  <script src="js/services.js?v=10"></script>
+  <script src="js/app.js?v=10"></script>
+</body>
+</html>
