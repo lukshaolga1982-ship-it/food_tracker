@@ -51,6 +51,24 @@ service cloud.firestore {
         );
     }
 
+    function foodCanEditDate(data) {
+      let now = nowMinsk();
+      return isFood()
+        && (
+          // Сегодня ответственный за питание может корректировать список с 09:00.
+          (data.year == now.year()
+            && data.month == now.month()
+            && data.day == now.day()
+            && now.hours() >= 9)
+          ||
+          // Будущие даты доступны с 10:00.
+          ((data.year > now.year()
+            || (data.year == now.year() && data.month > now.month())
+            || (data.year == now.year() && data.month == now.month() && data.day > now.day()))
+            && now.hours() >= 10)
+        );
+    }
+
     function teacherCanEditDate(data) {
       let now = nowMinsk();
       return teacherHasClass(data.classId)
@@ -114,9 +132,15 @@ service cloud.firestore {
         || (isTeacher() && teacherHasClass(resource.data.classId));
 
       allow create: if isAdmin()
+        || (isFood() && foodCanEditDate(request.resource.data))
         || (isTeacher() && teacherCanEditDate(request.resource.data));
 
       allow update: if isAdmin()
+        || (isFood()
+          && foodCanEditDate(resource.data)
+          && request.resource.data.classId == resource.data.classId
+          && request.resource.data.studentId == resource.data.studentId
+          && request.resource.data.dateKey == resource.data.dateKey)
         || (isTeacher()
           && teacherCanEditDate(resource.data)
           && request.resource.data.classId == resource.data.classId
@@ -131,9 +155,14 @@ service cloud.firestore {
         || (isTeacher() && teacherHasClass(resource.data.classId));
 
       allow create: if isAdmin()
+        || (isFood() && foodCanEditDate(request.resource.data))
         || (isTeacher() && teacherCanEditDate(request.resource.data));
 
       allow update: if isAdmin()
+        || (isFood()
+          && foodCanEditDate(resource.data)
+          && request.resource.data.classId == resource.data.classId
+          && request.resource.data.dateKey == resource.data.dateKey)
         || (isTeacher()
           && teacherCanEditDate(resource.data)
           && request.resource.data.classId == resource.data.classId
