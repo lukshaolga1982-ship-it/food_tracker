@@ -34,6 +34,23 @@ service cloud.firestore {
       return request.time + duration.value(3, 'h');
     }
 
+    function teacherCanEditOwnMealDate(data) {
+      let now = nowMinsk();
+      return isTeacher()
+        && data.userId == request.auth.uid
+        && (
+          (data.year == now.year()
+            && data.month == now.month()
+            && data.day == now.day()
+            && now.hours() < 9)
+          ||
+          ((data.year > now.year()
+            || (data.year == now.year() && data.month > now.month())
+            || (data.year == now.year() && data.month == now.month() && data.day > now.day()))
+            && now.hours() >= 10)
+        );
+    }
+
     function teacherCanEditDate(data) {
       let now = nowMinsk();
       return teacherHasClass(data.classId)
@@ -129,12 +146,10 @@ service cloud.firestore {
       allow read: if isAdmin() || isFood()
         || (isTeacher() && resource.data.userId == request.auth.uid);
 
-      allow create: if isTeacher()
-        && request.resource.data.userId == request.auth.uid
+      allow create: if teacherCanEditOwnMealDate(request.resource.data)
         && request.resource.data.status in ["eating", "not_eating"];
 
-      allow update: if isTeacher()
-        && resource.data.userId == request.auth.uid
+      allow update: if teacherCanEditOwnMealDate(resource.data)
         && request.resource.data.userId == request.auth.uid
         && request.resource.data.status in ["eating", "not_eating"];
 

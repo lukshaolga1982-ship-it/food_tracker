@@ -30,6 +30,20 @@ window.FOOD_APP = window.FOOD_APP || {};
     if(dateKey>n.dateKey) return afterFutureOpen;
     return false;
   }
+  function canEditTeacherMealDate(dateKey){
+    if(profile?.role==="admin") return true;
+    if(profile?.role!=="teacher") return false;
+    const n=nowParts();
+    const deadline=settings?.editDeadline||"09:00";
+    const futureOpen=settings?.futureEditTime||"10:00";
+    const [dh,dm]=deadline.split(":").map(Number);
+    const [fh,fm]=futureOpen.split(":").map(Number);
+    const beforeDeadline=n.hour<dh || (n.hour===dh && n.minute<dm);
+    const afterFutureOpen=n.hour>fh || (n.hour===fh && n.minute>=fm);
+    if(dateKey===n.dateKey) return beforeDeadline;
+    if(dateKey>n.dateKey) return afterFutureOpen;
+    return false;
+  }
   function roleLabel(){return C.ROLE_LABELS[profile?.role]||profile?.role||"—";}
   function catName(code){return C.categoryByCode(code)?.name||"";}
   function catShort(code){return C.categoryByCode(code)?.short||"—";}
@@ -166,6 +180,8 @@ window.FOOD_APP = window.FOOD_APP || {};
   function bindShell(){
     if(shellBound)return;shellBound=true;
     $("#logoutBtn").addEventListener("click",()=>Service.signOut());
+    const mobileLogout=$("#mobileLogoutBtn");
+    if(mobileLogout) mobileLogout.addEventListener("click",()=>Service.signOut());
     $("#refreshBtn").addEventListener("click",()=>route(currentRoute,true));
     $("#mainNav").addEventListener("click",e=>{
       const b=e.target.closest("[data-route]");if(b)route(b.dataset.route);
@@ -273,7 +289,7 @@ window.FOOD_APP = window.FOOD_APP || {};
     const map=new Map(records.map(r=>[r.dateKey,r]));
     const today=todayKey();
     const rows=Array.from({length:days},(_,i)=>{
-      const d=`${month}-${String(i+1).padStart(2,"0")}`, r=map.get(d), disabled=d<today;
+      const d=`${month}-${String(i+1).padStart(2,"0")}`, r=map.get(d), disabled=!canEditTeacherMealDate(d);
       const status=r?.status||"not_eating";
       return `<tr><td>${String(i+1).padStart(2,"0")}.${String(m).padStart(2,"0")}.${y}</td><td>${isWeekend(y,m,i+1)?"Выходной":"Рабочий день"}</td><td>
         <div class="segment ${disabled||isWeekend(y,m,i+1)?"disabled":""}" data-teacher-day="${d}">
@@ -288,6 +304,7 @@ window.FOOD_APP = window.FOOD_APP || {};
       <div class="grid-kpi">${kpi("Обеды за месяц",eating,"cream")}${kpi("Рабочие дни",workingEating,"green")}</div>
       <div class="card"><div class="card-header"><div><h3>${esc(profileName)}</h3><div class="muted">Отметьте, будете ли вы обедать. Другие виды питания для педагогов не учитываются.</div></div>
         <div class="field compact"><span>Месяц</span><input id="teacherMealMonth" type="month" value="${month}"></div></div>
+        <div class="notice" style="margin-bottom:12px">Сегодня можно изменить до <b>${settings?.editDeadline||"09:00"}</b>. Будущие даты открываются с <b>${settings?.futureEditTime||"10:00"}</b>.</div>
         <div class="table-wrap"><table><thead><tr><th>Дата</th><th>Тип дня</th><th>Питание</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
     $("#teacherMealMonth").onchange=e=>{selectedMonth=e.target.value;renderTeacherMeals()};
     $$('[data-tmeal]').forEach(btn=>btn.onclick=async()=>{
