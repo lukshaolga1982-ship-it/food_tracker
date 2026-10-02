@@ -73,12 +73,26 @@ window.FOOD_APP = window.FOOD_APP || {};
     let withdrawnDate=student?.withdrawnDate||null;
     if(!withdrawnDate&&student?.withdrawnAt?.toDate){const d=student.withdrawnAt.toDate();withdrawnDate=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`}
     if(student?.status==="withdrawn"&&withdrawnDate&&String(dateKey)>=String(withdrawnDate)&&!record)return null;
-    if(record && Object.prototype.hasOwnProperty.call(record,key)) return record[key]||null;
     const history=Array.isArray(student?.categoryHistory)?[...student.categoryHistory].filter(x=>x?.effectiveFrom).sort((a,b)=>String(a.effectiveFrom).localeCompare(String(b.effectiveFrom))):[];
-    if(!history.length) return student?.[key]||null;
-    let cat=null;
-    for(const h of history){if(String(h.effectiveFrom)<=String(dateKey))cat=h[key]||null;else break;}
-    return cat;
+    if(history.length){
+      let cat=null;
+      for(const h of history){if(String(h.effectiveFrom)<=String(dateKey))cat=h[key]||null;else break;}
+      return cat;
+    }
+    if(record && Object.prototype.hasOwnProperty.call(record,key)) return record[key]||null;
+    return student?.[key]||null;
+  }
+  function effectiveMealStatus(student,dateKey,meal,record=null){
+    const cat=categoryForDate(student,dateKey,meal,record);
+    if(!cat)return "none";
+    if(!record)return "eating";
+    const status=record?.[meal+"Status"];
+    const recordedCat=record?.[meal+"Category"]||null;
+    // Если запись дня была создана до назначения льготы, в ней мог сохраниться
+    // category=null и status=none. История статусов имеет приоритет: в дату
+    // начала льготы такой устаревший снимок не должен сдвигать учёт на +1 день.
+    if(status==="none" && !recordedCat && cat)return "eating";
+    return status || "eating";
   }
   function studentForDate(student,dateKey,record=null){return {...student,lunchCategory:categoryForDate(student,dateKey,"lunch",record),snackCategory:categoryForDate(student,dateKey,"snack",record)}}
   function categoryHistoryRows(student){return Array.isArray(student?.categoryHistory)?[...student.categoryHistory].filter(x=>x?.effectiveFrom).sort((a,b)=>String(a.effectiveFrom).localeCompare(String(b.effectiveFrom))):[]}
@@ -466,14 +480,14 @@ window.FOOD_APP = window.FOOD_APP || {};
     $("#exportClassMonth").onclick=()=>exportClassMonthWorkbook(classById(currentClassId),students,records,y,m,days);
   }
   function valForMeal(s,record,meal,dateKey){
-    const cat=categoryForDate(s,dateKey,meal,record),status=record?.[meal+"Status"]||(cat?"eating":"none");
+    const cat=categoryForDate(s,dateKey,meal,record),status=effectiveMealStatus(s,dateKey,meal,record);
     if(!cat||status==="none")return "";
     if(status==="absent")return "Н";
     if(status==="not_eating")return "–";
     return catNumber(cat);
   }
   function mealCellClass(s,r,meal,dateKey){
-    const cat=categoryForDate(s,dateKey,meal,r),status=r?.[meal+"Status"]||(cat?"eating":"none");
+    const cat=categoryForDate(s,dateKey,meal,r),status=effectiveMealStatus(s,dateKey,meal,r);
     if(!cat||status==="none")return "none";
     if(status==="absent")return "absent";
     if(status==="not_eating")return "not-eating";
@@ -697,7 +711,7 @@ window.FOOD_APP = window.FOOD_APP || {};
   function studentMealForDay(s,recordsMap,date,meal,categoryPredicate=()=>true){
     const r=recordsMap.get(`${s.id}_${date}`),cat=categoryForDate(s,date,meal,r);
     if(!cat||!categoryPredicate(cat))return false;
-    const status=r?.[meal+"Status"]||(cat?"eating":"none");return status==="eating";
+    return effectiveMealStatus(s,date,meal,r)==="eating";
   }
   function listReportSheet(title,students,records,dates,meal,categoryPredicate=()=>true,classPredicate=()=>true){
     const rm=new Map(records.map(r=>[`${r.studentId}_${r.dateKey}`,r])),rows=[[title],["ФИО","Класс",...dates.map(fmtDate),"Итого"]];
