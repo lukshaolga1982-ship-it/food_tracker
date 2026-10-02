@@ -699,11 +699,12 @@ window.FOOD_APP = window.FOOD_APP || {};
   }
   function listReportSheet(title,students,records,dates,meal,categoryPredicate=()=>true,classPredicate=()=>true){
     const rm=new Map(records.map(r=>[`${r.studentId}_${r.dateKey}`,r])),rows=[[title],["ФИО","Класс",...dates.map(fmtDate),"Итого"]];
-    const filtered=students.filter(s=>classPredicate(s)&&dates.some(d=>{const r=rm.get(`${s.id}_${d}`),cat=categoryForDate(s,d,meal,r);return !!cat&&categoryPredicate(cat)})).sort((a,b)=>String(a.fullName).localeCompare(String(b.fullName),"ru"));
-    const matrix=new Map(filtered.map(s=>[s.id,dates.map(d=>studentMealForDay(s,rm,d,meal,categoryPredicate)?"✓":"")]));
-    const dayTotals=dates.map((_,i)=>filtered.reduce((n,s)=>n+(matrix.get(s.id)[i]?1:0),0));
-    filtered.forEach(s=>{const vals=matrix.get(s.id);rows.push([s.fullName,classById(s.classId)?.name||s.classId,...vals,vals.filter(Boolean).length])});
-    rows.push(["ИТОГО ЗА ДЕНЬ","",...dayTotals,dayTotals.reduce((a,b)=>a+b,0)]);return rows;
+    const workingDates=dates.filter(d=>!isWeekendDateKey(d));
+    const filtered=students.filter(s=>classPredicate(s)&&workingDates.some(d=>{const r=rm.get(`${s.id}_${d}`),cat=categoryForDate(s,d,meal,r);return !!cat&&categoryPredicate(cat)})).sort((a,b)=>String(a.fullName).localeCompare(String(b.fullName),"ru"));
+    const matrix=new Map(filtered.map(s=>[s.id,dates.map(d=>isWeekendDateKey(d)?"В":(studentMealForDay(s,rm,d,meal,categoryPredicate)?"✓":""))]));
+    const dayTotals=dates.map((d,i)=>isWeekendDateKey(d)?"В":filtered.reduce((n,s)=>n+(matrix.get(s.id)[i]==="✓"?1:0),0));
+    filtered.forEach(s=>{const vals=matrix.get(s.id);rows.push([s.fullName,classById(s.classId)?.name||s.classId,...vals,vals.filter(v=>v==="✓").length])});
+    rows.push(["ИТОГО ЗА ДЕНЬ","",...dayTotals,dayTotals.filter(v=>typeof v==="number").reduce((a,b)=>a+b,0)]);return rows;
   }
   function reportSheetGroups(students,records,range,type="all"){
     const dates=dateList(range.start,range.end),groups=[];
@@ -719,7 +720,7 @@ window.FOOD_APP = window.FOOD_APP || {};
     const groups=reportSheetGroups(students,records,range,type);
     const tabs=groups.map((g,i)=>`<button class="btn btn-secondary report-preview-tab${i===0?" active":""}" data-report-tab="${i}">${esc(g.name)}</button>`).join("");
     const panes=groups.map((g,i)=>`<div class="report-preview-pane${i===0?"":" hidden"}" data-report-pane="${i}"><div class="table-wrap"><table class="summary-table report-preview-table">${g.rows.map((row,ri)=>`<tr>${row.map((v,ci)=>ri===0?`<th colspan="${Math.max(1,row.length)}">${esc(v)}</th>`:ri===1?`<th>${esc(v)}</th>`:`<td class="${ri===g.rows.length-1?"total-lunch":""}">${esc(v)}</td>`).join("")}</tr>`).join("")}</table></div></div>`).join("");
-    showModal("Предпросмотр отчёта",`<div class="notice" style="margin-bottom:12px">${esc(range.label)}. В строке «ИТОГО ЗА ДЕНЬ» показано количество детей, получающих питание в каждый день. В колонке «Итого» — количество дней питания по каждому ребёнку.</div><div class="page-actions" style="flex-wrap:wrap;margin-bottom:12px">${tabs}</div>${panes}`,()=>false);
+    showModal("Предпросмотр отчёта",`<div class="notice" style="margin-bottom:12px">${esc(range.label)}. В строке «ИТОГО ЗА ДЕНЬ» показано количество детей, получающих питание в каждый рабочий день. Выходные отмечены «В» и в итоги не входят. В колонке «Итого» — количество дней питания по каждому ребёнку.</div><div class="page-actions" style="flex-wrap:wrap;margin-bottom:12px">${tabs}</div>${panes}`,()=>false);
     $(".modal-save")?.classList.add("hidden");$(".modal-cancel")?.classList.add("hidden");
     $$(".report-preview-tab").forEach(b=>b.onclick=()=>{$$(".report-preview-tab").forEach(x=>x.classList.remove("active"));b.classList.add("active");$$(".report-preview-pane").forEach(p=>p.classList.toggle("hidden",p.dataset.reportPane!==b.dataset.reportTab))});
   }
