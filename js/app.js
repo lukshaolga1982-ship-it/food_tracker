@@ -615,11 +615,12 @@ window.FOOD_APP = window.FOOD_APP || {};
   }
   function summaryBlock(cls,records,y,m,days){
     const cr=records.filter(r=>r.classId===cls.id);
+    const workDays=Array.from({length:days},(_,i)=>i+1).filter(d=>!isWeekend(y,m,d));
     const rows=[...C.LUNCH_CATEGORIES.map(c=>({meal:"lunch",cat:c})),...C.SNACK_CATEGORIES.map(c=>({meal:"snack",cat:c}))];
-    return `<section class="summary-block"><div class="summary-title"><h3>${esc(cls.name)} класс</h3></div><div class="card"><div class="table-wrap"><table class="summary-table"><thead><tr><th>Категория</th>${Array.from({length:days},(_,i)=>`<th class="day">${i+1}</th>`).join("")}</tr></thead><tbody>
-      ${rows.map(r=>`<tr>${`<td class="${r.meal==="lunch"?"lunch-row":"snack-row"}">${esc(r.cat.short)}</td>`}${Array.from({length:days},(_,i)=>`<td class="num ${r.meal==="lunch"?"lunch-row":"snack-row"}">${countCategory(cr,i+1,r.meal,r.cat.code)}</td>`).join("")}</tr>`).join("")}
-      <tr><td class="total-lunch">Итого Обед</td>${Array.from({length:days},(_,i)=>`<td class="num total-lunch">${countTotal(cr,i+1,"lunch")}</td>`).join("")}</tr>
-      <tr><td class="total-snack">Итого Полдник</td>${Array.from({length:days},(_,i)=>`<td class="num total-snack">${countTotal(cr,i+1,"snack")}</td>`).join("")}</tr>
+    return `<section class="summary-block"><div class="summary-title"><h3>${esc(cls.name)} класс</h3></div><div class="card"><div class="table-wrap"><table class="summary-table"><thead><tr><th>Категория</th>${workDays.map(d=>`<th class="day">${d}</th>`).join("")}</tr></thead><tbody>
+      ${rows.map(r=>`<tr>${`<td class="${r.meal==="lunch"?"lunch-row":"snack-row"}">${esc(r.cat.short)}</td>`}${workDays.map(d=>`<td class="num ${r.meal==="lunch"?"lunch-row":"snack-row"}">${countCategory(cr,d,r.meal,r.cat.code)}</td>`).join("")}</tr>`).join("")}
+      <tr><td class="total-lunch">Итого Обед</td>${workDays.map(d=>`<td class="num total-lunch">${countTotal(cr,d,"lunch")}</td>`).join("")}</tr>
+      <tr><td class="total-snack">Итого Полдник</td>${workDays.map(d=>`<td class="num total-snack">${countTotal(cr,d,"snack")}</td>`).join("")}</tr>
       </tbody></table></div></div></section>`;
   }
   function countCategory(records,day,meal,code){return records.filter(r=>r.day===day&&r[meal+"Status"]==="eating"&&r[meal+"Category"]===code).length}
@@ -691,7 +692,7 @@ window.FOOD_APP = window.FOOD_APP || {};
     aoaToBook(`Питание_педагогов_${suffix}.xlsx`,{"Педагоги":rows});
   }
 
-  function dateList(start,end){const out=[];for(let d=new Date(start+"T12:00:00"),e=new Date(end+"T12:00:00");d<=e;d.setDate(d.getDate()+1))out.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`);return out}
+  function dateList(start,end){const out=[];for(let d=new Date(start+"T12:00:00"),e=new Date(end+"T12:00:00");d<=e;d.setDate(d.getDate()+1)){const w=d.getDay();if(w!==0&&w!==6)out.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`)}return out}
   function studentMealForDay(s,recordsMap,date,meal,categoryPredicate=()=>true){
     const r=recordsMap.get(`${s.id}_${date}`),cat=categoryForDate(s,date,meal,r);
     if(!cat||!categoryPredicate(cat))return false;
@@ -874,20 +875,22 @@ window.FOOD_APP = window.FOOD_APP || {};
   }
   function exportClassMonthWorkbook(cls,students,records,y,m,days){
     const map=new Map(records.map(r=>[`${r.studentId}_${r.day}`,r]));
-    const header=["ФИО","Категории по датам"];for(let d=1;d<=days;d++){header.push(`${d} О`,`${d} П`)}
+    const workDays=Array.from({length:days},(_,i)=>i+1).filter(d=>!isWeekend(y,m,d));
+    const header=["ФИО","Категории по датам"];workDays.forEach(d=>header.push(`${d} О`,`${d} П`));
     const aoa=[[`${cls.name} класс — ${String(m).padStart(2,"0")}.${y}`],header];
-    students.forEach(s=>{const row=[s.fullName,"см. по дням"];for(let d=1;d<=days;d++){const r=map.get(`${s.id}_${d}`),date=`${y}-${String(m).padStart(2,"0")}-${String(d).padStart(2,"0")}`;row.push(valForMeal(s,r,"lunch",date),valForMeal(s,r,"snack",date))}aoa.push(row)});
+    students.forEach(s=>{const row=[s.fullName,"см. по дням"];workDays.forEach(d=>{const r=map.get(`${s.id}_${d}`),date=`${y}-${String(m).padStart(2,"0")}-${String(d).padStart(2,"0")}`;row.push(valForMeal(s,r,"lunch",date),valForMeal(s,r,"snack",date))});aoa.push(row)});
     aoaToBook(`Класс_${cls.name}_${y}-${String(m).padStart(2,"0")}.xlsx`,{[cls.name]:aoa});
   }
 
   function exportSummaryWorkbook(ac,records,y,m,days){
     const sheets={};
+    const workDays=Array.from({length:days},(_,i)=>i+1).filter(d=>!isWeekend(y,m,d));
     ac.forEach(cls=>{
-      const cr=records.filter(r=>r.classId===cls.id), aoa=[[`${cls.name} класс`],["Категория",...Array.from({length:days},(_,i)=>i+1)]];
-      C.LUNCH_CATEGORIES.forEach(c=>aoa.push([c.short,...Array.from({length:days},(_,i)=>countCategory(cr,i+1,"lunch",c.code))]));
-      C.SNACK_CATEGORIES.forEach(c=>aoa.push([c.short,...Array.from({length:days},(_,i)=>countCategory(cr,i+1,"snack",c.code))]));
-      aoa.push(["Итого Обед",...Array.from({length:days},(_,i)=>countTotal(cr,i+1,"lunch"))]);
-      aoa.push(["Итого Полдник",...Array.from({length:days},(_,i)=>countTotal(cr,i+1,"snack"))]);
+      const cr=records.filter(r=>r.classId===cls.id), aoa=[[`${cls.name} класс`],["Категория",...workDays]];
+      C.LUNCH_CATEGORIES.forEach(c=>aoa.push([c.short,...workDays.map(d=>countCategory(cr,d,"lunch",c.code))]));
+      C.SNACK_CATEGORIES.forEach(c=>aoa.push([c.short,...workDays.map(d=>countCategory(cr,d,"snack",c.code))]));
+      aoa.push(["Итого Обед",...workDays.map(d=>countTotal(cr,d,"lunch"))]);
+      aoa.push(["Итого Полдник",...workDays.map(d=>countTotal(cr,d,"snack"))]);
       sheets[cls.name]=aoa;
     });
     aoaToBook(`Сводная_${y}-${String(m).padStart(2,"0")}.xlsx`,sheets);
