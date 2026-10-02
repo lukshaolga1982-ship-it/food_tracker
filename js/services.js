@@ -24,6 +24,47 @@ window.FOOD_APP = window.FOOD_APP || {};
     return {year:y, month:m, day:d};
   }
 
+  function categoryHistory(student){
+    const raw = Array.isArray(student?.categoryHistory) ? student.categoryHistory.filter(x=>x&&x.effectiveFrom) : [];
+    if(raw.length) return [...raw].sort((a,b)=>String(a.effectiveFrom).localeCompare(String(b.effectiveFrom)));
+    if(student && (student.lunchCategory || student.snackCategory)) return [{effectiveFrom:"1900-01-01",lunchCategory:student.lunchCategory||null,snackCategory:student.snackCategory||null,legacy:true}];
+    return [];
+  }
+
+  function categoriesOnDate(student,dateKey){
+    const history=categoryHistory(student);
+    let current={lunchCategory:null,snackCategory:null};
+    for(const h of history){
+      if(String(h.effectiveFrom)<=String(dateKey)) current={lunchCategory:h.lunchCategory||null,snackCategory:h.snackCategory||null};
+      else break;
+    }
+    return current;
+  }
+
+  function buildCategoryHistory(data){
+    const effectiveFrom=data.categoryEffectiveFrom||null;
+    const hasExplicitHistory=Array.isArray(data.categoryHistory)&&data.categoryHistory.some(x=>x&&x.effectiveFrom);
+    const history=hasExplicitHistory?[...data.categoryHistory].filter(x=>x&&x.effectiveFrom).map(h=>({effectiveFrom:h.effectiveFrom,lunchCategory:h.lunchCategory||null,snackCategory:h.snackCategory||null})).sort((a,b)=>String(a.effectiveFrom).localeCompare(String(b.effectiveFrom))):[];
+    const previousLunch=data.previousLunchCategory ?? data.lunchCategory ?? null;
+    const previousSnack=data.previousSnackCategory ?? data.snackCategory ?? null;
+    const changed = previousLunch !== (data.lunchCategory||null) || previousSnack !== (data.snackCategory||null);
+
+    if(!data.id){
+      const start=effectiveFrom||dateKeyFromDate(new Date());
+      return [{effectiveFrom:start,lunchCategory:data.lunchCategory||null,snackCategory:data.snackCategory||null}];
+    }
+    if(!changed || !effectiveFrom) return history.length?history:[{effectiveFrom:"1900-01-01",lunchCategory:previousLunch||null,snackCategory:previousSnack||null}];
+    const normalized=history.length?history:[{effectiveFrom:"1900-01-01",lunchCategory:previousLunch||null,snackCategory:previousSnack||null}];
+    const next=normalized.filter(h=>h.effectiveFrom!==effectiveFrom);
+    next.push({effectiveFrom,lunchCategory:data.lunchCategory||null,snackCategory:data.snackCategory||null});
+    return next.sort((a,b)=>String(a.effectiveFrom).localeCompare(String(b.effectiveFrom)));
+  }
+
+  function latestCategories(history,fallback){
+    if(history?.length){const h=history[history.length-1];return {lunchCategory:h.lunchCategory||null,snackCategory:h.snackCategory||null};}
+    return {lunchCategory:fallback.lunchCategory||null,snackCategory:fallback.snackCategory||null};
+  }
+
   class FirebaseService {
     constructor(){
       firebase.initializeApp(window.FIREBASE_CONFIG);
@@ -87,17 +128,21 @@ window.FOOD_APP = window.FOOD_APP || {};
     }
     async saveStudent(data, actor){
       const ref = data.id ? this.db.collection("students").doc(data.id) : this.db.collection("students").doc();
-      const payload = {...data}; delete payload.id;
+      const categoryHistory=buildCategoryHistory(data);
+      const latest=latestCategories(categoryHistory,data);
+      const payload = {...data,...latest,categoryHistory};
+      delete payload.id; delete payload.categoryEffectiveFrom; delete payload.previousLunchCategory; delete payload.previousSnackCategory;
       if(!data.id) payload.createdAt = this.FieldValue.serverTimestamp();
       payload.updatedAt = this.FieldValue.serverTimestamp();
       payload.status = payload.status || "active";
       await ref.set(payload,{merge:true});
-      await this.log(actor,"student_saved",{studentId:ref.id,fullName:payload.fullName,classId:payload.classId});
+      await this.log(actor,"student_saved",{studentId:ref.id,fullName:payload.fullName,classId:payload.classId,categoryEffectiveFrom:data.categoryEffectiveFrom||null});
       return ref.id;
     }
     async withdrawStudent(student, actor){
       await this.db.collection("students").doc(student.id).set({
         status:"withdrawn",
+        withdrawnDate:dateKeyFromDate(new Date()),
         withdrawnAt:this.FieldValue.serverTimestamp(),
         updatedAt:this.FieldValue.serverTimestamp()
       },{merge:true});
@@ -134,11 +179,12 @@ window.FOOD_APP = window.FOOD_APP || {};
     async saveDailyRecord(student,dateKey,lunchStatus,snackStatus,actor){
       const parts = parseDateKey(dateKey);
       const docId = `${dateKey}_${student.id}`;
+      const effective=categoriesOnDate(student,dateKey);
       const payload = {
         dateKey, ...parts, studentId:student.id, studentName:student.fullName, classId:student.classId,
-        lunchCategory:student.lunchCategory || null, snackCategory:student.snackCategory || null,
-        lunchStatus: student.lunchCategory ? lunchStatus : "none",
-        snackStatus: student.snackCategory ? snackStatus : "none",
+        lunchCategory:effective.lunchCategory || null, snackCategory:effective.snackCategory || null,
+        lunchStatus: effective.lunchCategory ? lunchStatus : "none",
+        snackStatus: effective.snackCategory ? snackStatus : "none",
         updatedBy:actor.id, updatedAt:this.FieldValue.serverTimestamp()
       };
       await this.db.collection("dailyRecords").doc(docId).set(payload,{merge:true});
@@ -161,13 +207,14 @@ window.FOOD_APP = window.FOOD_APP || {};
 
       students.forEach(student=>{
         if(existingMap.has(student.id)) return;
-        if(!student.lunchCategory && !student.snackCategory) return;
+        const effective=categoriesOnDate(student,dateKey);
+        if(!effective.lunchCategory && !effective.snackCategory) return;
         const ref=this.db.collection("dailyRecords").doc(`${dateKey}_${student.id}`);
         batch.set(ref,{
           dateKey,...parts,studentId:student.id,studentName:student.fullName,classId:student.classId,
-          lunchCategory:student.lunchCategory||null,snackCategory:student.snackCategory||null,
-          lunchStatus:student.lunchCategory?"eating":"none",
-          snackStatus:student.snackCategory?"eating":"none",
+          lunchCategory:effective.lunchCategory||null,snackCategory:effective.snackCategory||null,
+          lunchStatus:effective.lunchCategory?"eating":"none",
+          snackStatus:effective.snackCategory?"eating":"none",
           updatedBy:actor.id,updatedAt:this.FieldValue.serverTimestamp(),
           submittedSnapshot:true
         },{merge:true});
@@ -398,15 +445,16 @@ window.FOOD_APP = window.FOOD_APP || {};
     async seedDefaultClasses(){C.DEFAULT_CLASSES.forEach(c=>{if(!this.data.classes.some(x=>x.id===c.id))this.data.classes.push({...c,active:true})});this.save()}
     async getStudents(classId,includeWithdrawn=false){return this.data.students.filter(x=>x.classId===classId&&(includeWithdrawn||x.status!=="withdrawn")).sort((a,b)=>a.fullName.localeCompare(b.fullName,"ru"))}
     async getAllStudents(includeWithdrawn=false){return this.data.students.filter(x=>includeWithdrawn||x.status!=="withdrawn").sort((a,b)=>a.fullName.localeCompare(b.fullName,"ru"))}
-    async saveStudent(d){const idx=this.data.students.findIndex(x=>x.id===d.id);if(idx>=0)this.data.students[idx]={...this.data.students[idx],...d};else this.data.students.push({...d,id:id(),status:"active"});this.save()}
-    async withdrawStudent(s){const x=this.data.students.find(y=>y.id===s.id);if(x)x.status="withdrawn";this.save()}
+    async saveStudent(d){const history=buildCategoryHistory(d),latest=latestCategories(history,d),clean={...d,...latest,categoryHistory:history};delete clean.categoryEffectiveFrom;delete clean.previousLunchCategory;delete clean.previousSnackCategory;const idx=this.data.students.findIndex(x=>x.id===d.id);if(idx>=0)this.data.students[idx]={...this.data.students[idx],...clean};else this.data.students.push({...clean,id:id(),status:"active"});this.save()}
+    async withdrawStudent(s){const x=this.data.students.find(y=>y.id===s.id);if(x){x.status="withdrawn";x.withdrawnDate=dateKeyFromDate(new Date())}this.save()}
     async transferStudent(s,c){const x=this.data.students.find(y=>y.id===s.id);if(x)x.classId=c;this.save()}
     async getDailyRecords(dateKey,classId=null){return this.data.records.filter(x=>x.dateKey===dateKey&&(!classId||x.classId===classId))}
     async getMonthlyRecords(classId,year,month){return this.data.records.filter(x=>x.classId===classId&&x.year===year&&x.month===month)}
     async getMonthAllRecords(year,month){return this.data.records.filter(x=>x.year===year&&x.month===month)}
     async saveDailyRecord(student,dateKey,lunchStatus,snackStatus){
       const parts=parseDateKey(dateKey), rid=`${dateKey}_${student.id}`, idx=this.data.records.findIndex(x=>x.id===rid);
-      const r={id:rid,dateKey,...parts,studentId:student.id,studentName:student.fullName,classId:student.classId,lunchCategory:student.lunchCategory||null,snackCategory:student.snackCategory||null,lunchStatus:student.lunchCategory?lunchStatus:"none",snackStatus:student.snackCategory?snackStatus:"none"};
+      const effective=categoriesOnDate(student,dateKey);
+      const r={id:rid,dateKey,...parts,studentId:student.id,studentName:student.fullName,classId:student.classId,lunchCategory:effective.lunchCategory||null,snackCategory:effective.snackCategory||null,lunchStatus:effective.lunchCategory?lunchStatus:"none",snackStatus:effective.snackCategory?snackStatus:"none"};
       if(idx>=0)this.data.records[idx]=r;else this.data.records.push(r);this.save();return r;
     }
     async submitClass(dateKey,classId){
@@ -416,13 +464,14 @@ window.FOOD_APP = window.FOOD_APP || {};
       let created=0;
       students.forEach(student=>{
         if(existingMap.has(student.id)) return;
-        if(!student.lunchCategory && !student.snackCategory) return;
+        const effective=categoriesOnDate(student,dateKey);
+        if(!effective.lunchCategory && !effective.snackCategory) return;
         const parts=parseDateKey(dateKey);
         this.data.records.push({
           id:`${dateKey}_${student.id}`,dateKey,...parts,studentId:student.id,studentName:student.fullName,classId:student.classId,
-          lunchCategory:student.lunchCategory||null,snackCategory:student.snackCategory||null,
-          lunchStatus:student.lunchCategory?"eating":"none",
-          snackStatus:student.snackCategory?"eating":"none",
+          lunchCategory:effective.lunchCategory||null,snackCategory:effective.snackCategory||null,
+          lunchStatus:effective.lunchCategory?"eating":"none",
+          snackStatus:effective.snackCategory?"eating":"none",
           submittedSnapshot:true
         });
         created++;

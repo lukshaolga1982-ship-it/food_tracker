@@ -68,6 +68,20 @@ window.FOOD_APP = window.FOOD_APP || {};
   function dayCount(y,m){return new Date(y,m,0).getDate();}
   function monthBounds(v){const [y,m]=v.split("-").map(Number);return {y,m,days:dayCount(y,m)};}
   function isWeekend(y,m,d){const w=new Date(y,m-1,d).getDay();return w===0||w===6;}
+  function categoryForDate(student,dateKey,meal,record=null){
+    const key=meal+"Category";
+    let withdrawnDate=student?.withdrawnDate||null;
+    if(!withdrawnDate&&student?.withdrawnAt?.toDate){const d=student.withdrawnAt.toDate();withdrawnDate=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`}
+    if(student?.status==="withdrawn"&&withdrawnDate&&String(dateKey)>=String(withdrawnDate)&&!record)return null;
+    if(record && Object.prototype.hasOwnProperty.call(record,key)) return record[key]||null;
+    const history=Array.isArray(student?.categoryHistory)?[...student.categoryHistory].filter(x=>x?.effectiveFrom).sort((a,b)=>String(a.effectiveFrom).localeCompare(String(b.effectiveFrom))):[];
+    if(!history.length) return student?.[key]||null;
+    let cat=null;
+    for(const h of history){if(String(h.effectiveFrom)<=String(dateKey))cat=h[key]||null;else break;}
+    return cat;
+  }
+  function studentForDate(student,dateKey,record=null){return {...student,lunchCategory:categoryForDate(student,dateKey,"lunch",record),snackCategory:categoryForDate(student,dateKey,"snack",record)}}
+  function categoryHistoryRows(student){return Array.isArray(student?.categoryHistory)?[...student.categoryHistory].filter(x=>x?.effectiveFrom).sort((a,b)=>String(a.effectiveFrom).localeCompare(String(b.effectiveFrom))):[]}
   function defaultStatuses(student,record){
     return {
       lunch: record?.lunchStatus || (student.lunchCategory ? "eating":"none"),
@@ -359,11 +373,12 @@ window.FOOD_APP = window.FOOD_APP || {};
 
   async function renderClassToday(){
     const cls=classById(currentClassId), body=$("#classTabBody");
-    const students=await Service.getStudents(currentClassId);
+    const rawStudents=await Service.getStudents(currentClassId);
     const records=await Service.getDailyRecords(selectedDate,currentClassId);
     const subs=await Service.getSubmissions(selectedDate, profile.role==="teacher" ? currentClassId : null);
     const submitted=subs.find(x=>x.classId===currentClassId);
     const map=new Map(records.map(r=>[r.studentId,r]));
+    const students=rawStudents.map(s=>studentForDate(s,selectedDate,map.get(s.id)));
     const editable=canEditDate(selectedDate);
     const n=nowParts(), deadline=settings?.editDeadline||"09:00", futureOpen=settings?.futureEditTime||"10:00";
     let banner;
@@ -440,33 +455,33 @@ window.FOOD_APP = window.FOOD_APP || {};
   }
 
   async function renderClassMonth(){
-    const body=$("#classTabBody"), students=await Service.getStudents(currentClassId);
+    const body=$("#classTabBody"), students=await Service.getStudents(currentClassId,true);
     selectedMonth=selectedDate.slice(0,7);
     const {y,m,days}=monthBounds(selectedMonth), records=await Service.getMonthlyRecords(currentClassId,y,m);
     const byStudentDay=new Map(records.map(r=>[`${r.studentId}_${r.day}`,r]));
     body.innerHTML=`<div class="page-actions"><div class="field compact"><span>Месяц</span><input id="monthPick" type="month" value="${selectedMonth}"></div><button id="exportClassMonth" class="btn btn-secondary">⇩ Excel класса</button></div>
     <div class="card"><div class="table-wrap"><table class="table-month"><thead><tr><th class="sticky-col">Учащийся</th>${Array.from({length:days},(_,i)=>`<th class="day-head ${isWeekend(y,m,i+1)?"muted":""}">${i+1}<div class="subcols"><small>О</small><small>П</small></div></th>`).join("")}</tr></thead>
-    <tbody>${students.map(s=>`<tr><td class="sticky-col"><b>${esc(s.fullName)}</b><div class="student-meta">${esc(catShort(s.lunchCategory))} / ${esc(catShort(s.snackCategory))}</div></td>${Array.from({length:days},(_,i)=>monthStudentCell(s,byStudentDay.get(`${s.id}_${i+1}`))).join("")}</tr>`).join("")}</tbody></table></div></div>`;
+    <tbody>${students.map(s=>`<tr><td class="sticky-col"><b>${esc(s.fullName)}</b><div class="student-meta">Категории учитываются по датам</div></td>${Array.from({length:days},(_,i)=>{const date=`${y}-${String(m).padStart(2,"0")}-${String(i+1).padStart(2,"0")}`;return monthStudentCell(s,byStudentDay.get(`${s.id}_${i+1}`),date)}).join("")}</tr>`).join("")}</tbody></table></div></div>`;
     $("#monthPick").onchange=e=>{selectedMonth=e.target.value;selectedDate=e.target.value+"-01";renderClassMonth()};
     $("#exportClassMonth").onclick=()=>exportClassMonthWorkbook(classById(currentClassId),students,records,y,m,days);
   }
-  function valForMeal(s,record,meal){
-    const cat=s[meal+"Category"],status=record?.[meal+"Status"]||(cat?"eating":"none");
+  function valForMeal(s,record,meal,dateKey){
+    const cat=categoryForDate(s,dateKey,meal,record),status=record?.[meal+"Status"]||(cat?"eating":"none");
     if(!cat||status==="none")return "";
     if(status==="absent")return "Н";
     if(status==="not_eating")return "–";
-    return catNumber(record?.[meal+"Category"]||cat);
+    return catNumber(cat);
   }
-  function mealCellClass(s,r,meal){
-    const cat=s[meal+"Category"], status=r?.[meal+"Status"]||(cat?"eating":"none");
-    if(!cat||status==="none") return "none";
-    if(status==="absent") return "absent";
-    if(status==="not_eating") return "not-eating";
+  function mealCellClass(s,r,meal,dateKey){
+    const cat=categoryForDate(s,dateKey,meal,r),status=r?.[meal+"Status"]||(cat?"eating":"none");
+    if(!cat||status==="none")return "none";
+    if(status==="absent")return "absent";
+    if(status==="not_eating")return "not-eating";
     return "eating";
   }
-  function monthStudentCell(s,r){
-    const lc=mealCellClass(s,r,"lunch"), sc=mealCellClass(s,r,"snack");
-    return `<td class="day-cell"><div class="subcols"><span class="mini-cell lunch ${lc}" title="${lc==="absent"?"Отсутствует":lc==="not-eating"?"Не питается":"Питается"}">${esc(valForMeal(s,r,"lunch"))}</span><span class="mini-cell snack ${sc}" title="${sc==="absent"?"Отсутствует":sc==="not-eating"?"Не питается":"Питается"}">${esc(valForMeal(s,r,"snack"))}</span></div></td>`
+  function monthStudentCell(s,r,dateKey){
+    const lc=mealCellClass(s,r,"lunch",dateKey),sc=mealCellClass(s,r,"snack",dateKey);
+    return `<td class="day-cell"><div class="subcols"><span class="mini-cell lunch ${lc}" title="${lc==="absent"?"Отсутствует":lc==="not-eating"?"Не питается":"Питается"}">${esc(valForMeal(s,r,"lunch",dateKey))}</span><span class="mini-cell snack ${sc}" title="${sc==="absent"?"Отсутствует":sc==="not-eating"?"Не питается":"Питается"}">${esc(valForMeal(s,r,"snack",dateKey))}</span></div></td>`
   }
 
   async function renderClassStudents(){
@@ -479,8 +494,9 @@ window.FOOD_APP = window.FOOD_APP || {};
     bindStudentActions(students,canManage);
   }
   function studentRows(students,canManage){
-    return students.map(s=>`<tr><td><b>${esc(s.fullName)}</b></td><td>${esc(catShort(s.lunchCategory))}${catName(s.lunchCategory)?`<div class="student-meta">${esc(catName(s.lunchCategory))}</div>`:""}</td><td>${s.snackCategory?esc(catShort(s.snackCategory)):"—"}${catName(s.snackCategory)?`<div class="student-meta">${esc(catName(s.snackCategory))}</div>`:""}</td><td>${s.status==="withdrawn"?`<span class="status off">Выбыл</span>`:`<span class="status ok">Активен</span>`}</td><td><div class="actions">${canManage?`<button class="btn btn-sm btn-secondary" data-edit-student="${s.id}">Изменить</button>${profile.role==="admin"?`<button class="btn btn-sm btn-secondary" data-transfer="${s.id}">Перевести</button>`:""}${s.status!=="withdrawn"?`<button class="btn btn-sm btn-danger" data-withdraw="${s.id}">Выбыл</button>`:""}`:""}</div></td></tr>`).join("")||`<tr><td colspan="5"><div class="empty">Нет учащихся</div></td></tr>`;
+    return students.map(s=>{const hist=categoryHistoryRows(s),last=hist[hist.length-1];return `<tr><td><b>${esc(s.fullName)}</b>${last?`<div class="student-meta">Категория с ${esc(fmtDate(last.effectiveFrom))}</div>`:""}</td><td>${esc(catShort(s.lunchCategory))}${catName(s.lunchCategory)?`<div class="student-meta">${esc(catName(s.lunchCategory))}</div>`:""}</td><td>${s.snackCategory?esc(catShort(s.snackCategory)):"—"}${catName(s.snackCategory)?`<div class="student-meta">${esc(catName(s.snackCategory))}</div>`:""}</td><td>${s.status==="withdrawn"?`<span class="status off">Выбыл</span>`:`<span class="status ok">Активен</span>`}</td><td><div class="actions">${canManage?`<button class="btn btn-sm btn-secondary" data-edit-student="${s.id}">Изменить</button>${profile.role==="admin"?`<button class="btn btn-sm btn-secondary" data-transfer="${s.id}">Перевести</button>`:""}${s.status!=="withdrawn"?`<button class="btn btn-sm btn-danger" data-withdraw="${s.id}">Выбыл</button>`:""}`:""}</div></td></tr>`}).join("")||`<tr><td colspan="5"><div class="empty">Нет учащихся</div></td></tr>`;
   }
+
   function bindStudentActions(students,canManage){
     if(!canManage)return;
     $$("[data-edit-student]").forEach(b=>b.onclick=()=>studentModal(students.find(s=>s.id===b.dataset.editStudent)));
@@ -489,21 +505,27 @@ window.FOOD_APP = window.FOOD_APP || {};
   }
   function categoryOptions(list,value,none=true){return `${none?`<option value="">Не получает</option>`:""}${list.map(c=>`<option value="${c.code}" ${value===c.code?"selected":""}>${esc(c.name ? c.short+" — "+c.name : c.short)}</option>`).join("")}`}
   function studentModal(s){
-    // Старые записи с dietary:true переводим в отдельную категорию при следующем сохранении.
     const legacyDiet=s?.dietary===true;
     const lunchValue=legacyDiet ? "O_D" : s?.lunchCategory;
     const snackValue=legacyDiet ? (s?.snackCategory ? "P_D" : null) : s?.snackCategory;
+    const history=categoryHistoryRows(s);
+    const historyHtml=history.length?`<div class="full"><div class="student-meta" style="margin-bottom:6px"><b>История категорий</b></div><div class="table-wrap"><table><thead><tr><th>Действует с</th><th>Обед</th><th>Полдник</th></tr></thead><tbody>${history.map(h=>`<tr><td>${esc(fmtDate(h.effectiveFrom))}</td><td>${esc(catShort(h.lunchCategory))}</td><td>${esc(catShort(h.snackCategory))}</td></tr>`).join("")}</tbody></table></div></div>`:"";
     showModal(s?"Редактировать учащегося":"Добавить учащегося",`
       <div class="form-grid">
         <label class="full"><span>ФИО</span><input id="mFullName" value="${esc(s?.fullName||"")}" placeholder="Фамилия Имя" required></label>
         <label><span>Категория обеда</span><select id="mLunch">${categoryOptions(C.LUNCH_CATEGORIES,lunchValue)}</select></label>
         <label><span>Категория полдника</span><select id="mSnack">${categoryOptions(C.SNACK_CATEGORIES,snackValue)}</select></label>
+        <label class="full"><span>${s?"Изменение категории действует с":"Категория действует с"}</span><input id="mCategoryFrom" type="date" value="${esc(todayKey())}"></label>
+        <div class="notice full">Если категория меняется в течение месяца, укажите фактическую дату начала. Например, с <b>21.09</b>: до этой даты в отчёте по новой категории будут пустые ячейки.</div>
+        ${historyHtml}
         <div class="notice full"><b>Диетическое питание</b> является отдельной категорией. Его нельзя выбрать дополнительно к основной категории.</div>
       </div>`,
       async()=>{
         const fullName=$("#mFullName").value.trim();if(!fullName){toast("Введите ФИО","error");return false}
-        const lunch=$("#mLunch").value||null, snack=$("#mSnack").value||null;
-        await Service.saveStudent({...s||{},fullName,classId:currentClassId,lunchCategory:lunch,snackCategory:snack,dietary:lunch==="O_D"||snack==="P_D",status:s?.status||"active"},profile);
+        const lunch=$("#mLunch").value||null,snack=$("#mSnack").value||null,categoryEffectiveFrom=$("#mCategoryFrom").value;
+        const categoryChanged=!s||lunch!==(lunchValue||null)||snack!==(snackValue||null);
+        if(categoryChanged&&!categoryEffectiveFrom){toast("Укажите дату начала действия категории","error");return false}
+        await Service.saveStudent({...s||{},fullName,classId:currentClassId,lunchCategory:lunch,snackCategory:snack,previousLunchCategory:lunchValue||null,previousSnackCategory:snackValue||null,categoryEffectiveFrom:categoryChanged?categoryEffectiveFrom:null,dietary:lunch==="O_D"||snack==="P_D",status:s?.status||"active"},profile);
         toast(s?"Данные обновлены":"Учащийся добавлен");await renderClassStudents();return true;
       });
   }
@@ -616,7 +638,7 @@ window.FOOD_APP = window.FOOD_APP || {};
     $("#content").innerHTML=`<div class="card"><div class="card-header"><h3>Списочные отчёты</h3></div><div class="card-body"><p class="muted">Выберите период. В каждом отчёте видно количество питания <b>по каждому ребёнку</b> и итоговое количество <b>по каждому дню</b>. Предпросмотр открывается на странице и ничего не скачивает.</p>${periodControls}<div class="report-actions" style="margin-top:14px;display:grid;gap:10px"><div class="page-actions"><button id="makeReportsBtn" class="btn btn-primary">⇩ Скачать все отчёты</button><button id="previewReportsBtn" class="btn btn-secondary">👁 Предпросмотр всех</button></div><div class="page-actions"><button id="makeParentReportsBtn" class="btn btn-secondary">Родительская плата</button><button id="previewParentReportsBtn" class="btn btn-secondary">👁 Просмотр</button></div><div class="page-actions"><button id="makeDietReportsBtn" class="btn btn-secondary">Диетическое питание</button><button id="previewDietReportsBtn" class="btn btn-secondary">👁 Просмотр</button></div><div class="page-actions"><button id="makeBenefit5ReportsBtn" class="btn btn-secondary">Льготные 5А–5Б</button><button id="previewBenefit5ReportsBtn" class="btn btn-secondary">👁 Просмотр</button></div><div class="page-actions"><button id="makeBenefit68ReportsBtn" class="btn btn-secondary">Льготные 6–8</button><button id="previewBenefit68ReportsBtn" class="btn btn-secondary">👁 Просмотр</button></div><div class="page-actions"><button id="makeBenefit911ReportsBtn" class="btn btn-secondary">Льготные 9–11</button><button id="previewBenefit911ReportsBtn" class="btn btn-secondary">👁 Просмотр</button></div><div class="page-actions"><button id="makeTeacherReportsBtn" class="btn btn-secondary">Питание педагогов</button><button id="previewTeacherReportsBtn" class="btn btn-secondary">👁 Просмотр</button></div></div><div id="reportHint" class="notice" style="margin-top:14px">Для одного отчёта нажмите «Просмотр», чтобы проверить данные перед скачиванием.</div></div></div>`;
     const updatePeriod=()=>{const v=$("#reportPeriod").value;$("#reportDate").parentElement.classList.toggle("hidden",!['day','week'].includes(v));$("#reportMonthWrap").classList.toggle("hidden",v!=="month");$("#reportStartWrap").classList.toggle("hidden",v!=="custom");$("#reportEndWrap").classList.toggle("hidden",v!=="custom")};
     $("#reportPeriod").onchange=updatePeriod; updatePeriod();
-    const loadReportData=async()=>{const range=getReportRange();if(!range.start||!range.end)throw new Error("Укажите корректный период");if(range.start>range.end)throw new Error("Начало периода не может быть позже конца");const students=await Service.getAllStudents(false);const records=await Service.getRecordsBetween(range.start,range.end);return {range,students,records};};
+    const loadReportData=async()=>{const range=getReportRange();if(!range.start||!range.end)throw new Error("Укажите корректный период");if(range.start>range.end)throw new Error("Начало периода не может быть позже конца");const students=await Service.getAllStudents(true);const records=await Service.getRecordsBetween(range.start,range.end);return {range,students,records};};
     const runReport=async(type)=>{try{const {range,students,records}=await loadReportData();if(type==="teachers"){await exportTeacherMealReport(range);toast("Отчёт по педагогам сформирован")}else{exportRequestedReports(students,records,range,type);toast(type==="all"?"Все отчёты сформированы":"Отчёт сформирован")}}catch(e){console.error(e);toast(e.message,"error")}};
     const previewReport=async(type)=>{try{const {range,students,records}=await loadReportData();if(type==="teachers"){await previewTeacherMealReport(range)}else{previewRequestedReports(students,records,range,type)}}catch(e){console.error(e);toast(e.message,"error")}};
     $("#makeReportsBtn").onclick=()=>runReport("all");
@@ -670,22 +692,29 @@ window.FOOD_APP = window.FOOD_APP || {};
   }
 
   function dateList(start,end){const out=[];for(let d=new Date(start+"T12:00:00"),e=new Date(end+"T12:00:00");d<=e;d.setDate(d.getDate()+1))out.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`);return out}
-  function studentMealForDay(s,recordsMap,date,meal){const r=recordsMap.get(`${s.id}_${date}`);const status=r?.[meal+"Status"]||(s[meal+"Category"]?"eating":"none");return status==="eating"?true:false}
-  function listReportSheet(title,students,records,dates,meal,filterFn){const rm=new Map(records.map(r=>[`${r.studentId}_${r.dateKey}`,r]));const rows=[[title],["ФИО","Класс",...dates.map(fmtDate),"Итого"]];const filtered=students.filter(filterFn).sort((a,b)=>String(a.fullName).localeCompare(String(b.fullName),"ru"));const dayTotals=dates.map(d=>filtered.reduce((n,s)=>n+(studentMealForDay(s,rm,d,meal)?1:0),0));filtered.forEach(s=>{const vals=dates.map(d=>studentMealForDay(s,rm,d,meal)?"✓":"");rows.push([s.fullName,classById(s.classId)?.name||s.classId,...vals,vals.filter(Boolean).length])});rows.push(["ИТОГО ЗА ДЕНЬ","",...dayTotals,dayTotals.reduce((a,b)=>a+b,0)]);return rows}
-
+  function studentMealForDay(s,recordsMap,date,meal,categoryPredicate=()=>true){
+    const r=recordsMap.get(`${s.id}_${date}`),cat=categoryForDate(s,date,meal,r);
+    if(!cat||!categoryPredicate(cat))return false;
+    const status=r?.[meal+"Status"]||(cat?"eating":"none");return status==="eating";
+  }
+  function listReportSheet(title,students,records,dates,meal,categoryPredicate=()=>true,classPredicate=()=>true){
+    const rm=new Map(records.map(r=>[`${r.studentId}_${r.dateKey}`,r])),rows=[[title],["ФИО","Класс",...dates.map(fmtDate),"Итого"]];
+    const filtered=students.filter(s=>classPredicate(s)&&dates.some(d=>{const r=rm.get(`${s.id}_${d}`),cat=categoryForDate(s,d,meal,r);return !!cat&&categoryPredicate(cat)})).sort((a,b)=>String(a.fullName).localeCompare(String(b.fullName),"ru"));
+    const matrix=new Map(filtered.map(s=>[s.id,dates.map(d=>studentMealForDay(s,rm,d,meal,categoryPredicate)?"✓":"")]));
+    const dayTotals=dates.map((_,i)=>filtered.reduce((n,s)=>n+(matrix.get(s.id)[i]?1:0),0));
+    filtered.forEach(s=>{const vals=matrix.get(s.id);rows.push([s.fullName,classById(s.classId)?.name||s.classId,...vals,vals.filter(Boolean).length])});
+    rows.push(["ИТОГО ЗА ДЕНЬ","",...dayTotals,dayTotals.reduce((a,b)=>a+b,0)]);return rows;
+  }
   function reportSheetGroups(students,records,range,type="all"){
     const dates=dateList(range.start,range.end),groups=[];
-    const add=(name,title,ss,meal,filterFn)=>groups.push({name,title,rows:listReportSheet(title,ss,records,dates,meal,filterFn)});
-    if(type==="all"||type==="parent") classes.forEach(cls=>{
-      add(`${cls.name} Завтраки`,`${cls.name} — завтраки за родительскую плату ${range.label}`,students.filter(s=>s.classId===cls.id&&s.lunchCategory==="O"),"lunch",()=>true);
-      add(`${cls.name} Полдники`,`${cls.name} — полдники за родительскую плату ${range.label}`,students.filter(s=>s.classId===cls.id&&s.snackCategory==="P"),"snack",()=>true);
-    });
-    if(type==="all"||type==="diet"){add("Диеты Завтраки",`Диетическое питание — завтраки ${range.label}`,students.filter(s=>s.lunchCategory==="O_D"),"lunch",()=>true);add("Диеты Полдники",`Диетическое питание — полдники ${range.label}`,students.filter(s=>s.snackCategory==="P_D"),"snack",()=>true)}
-    const gs={benefit5:{name:"5А–5Б",ids:["5a","5b"]},benefit68:{name:"6–8",ids:["6a","6b","7a","7b","8a","8b"]},benefit911:{name:"9–11",ids:["9","10","11"]}};
-    const wanted=type==="all"?["benefit5","benefit68","benefit911"]:gs[type]?[type]:[];
-    wanted.forEach(k=>{const g=gs[k],base=students.filter(s=>g.ids.includes(s.classId));add(`Льготные ${g.name} Завтраки`,`Льготные — ${g.name} — завтраки ${range.label}`,base,"lunch",s=>s.lunchCategory&&s.lunchCategory!=="O");add(`Льготные ${g.name} Полдники`,`Льготные — ${g.name} — полдники ${range.label}`,base,"snack",s=>s.snackCategory&&s.snackCategory!=="P")});
+    const add=(name,title,meal,categoryPredicate,classPredicate=()=>true)=>groups.push({name,title,rows:listReportSheet(title,students,records,dates,meal,categoryPredicate,classPredicate)});
+    if(type==="all"||type==="parent")classes.forEach(cls=>{add(`${cls.name} Завтраки`,`${cls.name} — завтраки за родительскую плату ${range.label}`,"lunch",c=>c==="O",s=>s.classId===cls.id);add(`${cls.name} Полдники`,`${cls.name} — полдники за родительскую плату ${range.label}`,"snack",c=>c==="P",s=>s.classId===cls.id)});
+    if(type==="all"||type==="diet"){add("Диеты Завтраки",`Диетическое питание — завтраки ${range.label}`,"lunch",c=>c==="O_D");add("Диеты Полдники",`Диетическое питание — полдники ${range.label}`,"snack",c=>c==="P_D")}
+    const gs={benefit5:{name:"5А–5Б",ids:["5a","5b"]},benefit68:{name:"6–8",ids:["6a","6b","7a","7b","8a","8b"]},benefit911:{name:"9–11",ids:["9","10","11"]}},wanted=type==="all"?["benefit5","benefit68","benefit911"]:gs[type]?[type]:[];
+    wanted.forEach(k=>{const g=gs[k],cp=s=>g.ids.includes(s.classId);add(`Льготные ${g.name} Завтраки`,`Льготные — ${g.name} — завтраки ${range.label}`,"lunch",c=>!!c&&c!=="O",cp);add(`Льготные ${g.name} Полдники`,`Льготные — ${g.name} — полдники ${range.label}`,"snack",c=>!!c&&c!=="P",cp)});
     return groups;
   }
+
   function previewRequestedReports(students,records,range,type="all"){
     const groups=reportSheetGroups(students,records,range,type);
     const tabs=groups.map((g,i)=>`<button class="btn btn-secondary report-preview-tab${i===0?" active":""}" data-report-tab="${i}">${esc(g.name)}</button>`).join("");
@@ -696,27 +725,8 @@ window.FOOD_APP = window.FOOD_APP || {};
   }
 
   function exportRequestedReports(students,records,range,type="all"){
-    const dates=dateList(range.start,range.end),sheets={};
-    const addParent=()=>classes.forEach(cls=>{
-      const ss=students.filter(s=>s.classId===cls.id&&s.lunchCategory==="O");
-      sheets[`${cls.name} Завтраки`]=listReportSheet(`${cls.name} — завтраки за родительскую плату ${range.label}`,ss,records,dates,"lunch",()=>true);
-      sheets[`${cls.name} Полдники`]=listReportSheet(`${cls.name} — полдники за родительскую плату ${range.label}`,students.filter(s=>s.classId===cls.id&&s.snackCategory==="P"),records,dates,"snack",()=>true);
-    });
-    const addDiet=()=>{
-      sheets["Диеты Завтраки"]=listReportSheet(`Диетическое питание — завтраки ${range.label}`,students.filter(s=>s.lunchCategory==="O_D"),records,dates,"lunch",()=>true);
-      sheets["Диеты Полдники"]=listReportSheet(`Диетическое питание — полдники ${range.label}`,students.filter(s=>s.snackCategory==="P_D"),records,dates,"snack",()=>true);
-    };
-    const addBenefits=(g)=>{
-      const base=students.filter(s=>g.ids.includes(s.classId));
-      sheets[`Льготные ${g.name} Завтрак`]=listReportSheet(`Льготные — ${g.name} — завтраки ${range.label}`,base,records,dates,"lunch",s=>s.lunchCategory&&s.lunchCategory!=="O");
-      sheets[`Льготные ${g.name} Полдник`]=listReportSheet(`Льготные — ${g.name} — полдники ${range.label}`,base,records,dates,"snack",s=>s.snackCategory&&s.snackCategory!=="P");
-    };
-    const groups={benefit5:{name:"5А–5Б",ids:["5a","5b"]},benefit68:{name:"6–8",ids:["6a","6b","7a","7b","8a","8b"]},benefit911:{name:"9–11",ids:["9","10","11"]}};
-    if(type==="all"||type==="parent")addParent();
-    if(type==="all"||type==="diet")addDiet();
-    if(type==="all"||groups[type])addBenefits(groups[type]);
-    const suffix=type==="all"?"все":type;
-    aoaToBook(`Питание_${suffix}_${range.start}_${range.end}.xlsx`,sheets);
+    const sheets={};reportSheetGroups(students,records,range,type).forEach(g=>sheets[g.name]=g.rows);
+    const suffix=type==="all"?"все":type;aoaToBook(`Питание_${suffix}_${range.start}_${range.end}.xlsx`,sheets);
   }
 
   async function renderImport(){
@@ -864,11 +874,12 @@ window.FOOD_APP = window.FOOD_APP || {};
   }
   function exportClassMonthWorkbook(cls,students,records,y,m,days){
     const map=new Map(records.map(r=>[`${r.studentId}_${r.day}`,r]));
-    const header=["ФИО","Категория"];for(let d=1;d<=days;d++){header.push(`${d} О`,`${d} П`)}
+    const header=["ФИО","Категории по датам"];for(let d=1;d<=days;d++){header.push(`${d} О`,`${d} П`)}
     const aoa=[[`${cls.name} класс — ${String(m).padStart(2,"0")}.${y}`],header];
-    students.forEach(s=>{const row=[s.fullName,`${catShort(s.lunchCategory)} / ${catShort(s.snackCategory)}`];for(let d=1;d<=days;d++){const r=map.get(`${s.id}_${d}`);row.push(valForMeal(s,r,"lunch"),valForMeal(s,r,"snack"))}aoa.push(row)});
+    students.forEach(s=>{const row=[s.fullName,"см. по дням"];for(let d=1;d<=days;d++){const r=map.get(`${s.id}_${d}`),date=`${y}-${String(m).padStart(2,"0")}-${String(d).padStart(2,"0")}`;row.push(valForMeal(s,r,"lunch",date),valForMeal(s,r,"snack",date))}aoa.push(row)});
     aoaToBook(`Класс_${cls.name}_${y}-${String(m).padStart(2,"0")}.xlsx`,{[cls.name]:aoa});
   }
+
   function exportSummaryWorkbook(ac,records,y,m,days){
     const sheets={};
     ac.forEach(cls=>{
