@@ -27,22 +27,64 @@ service cloud.firestore {
       return isTeacher() && classId in userData().classIds;
     }
 
-    // Беларусь использует UTC+3.
-    // Текущий день: редактирование до 09:00 по Минску (до 06:00 UTC).
-    // Будущие дни: редактирование открывается после 10:00 по Минску (с 07:00 UTC).
+    // Время в Firebase request.time — UTC. Для Браслава используем UTC+3.
+    // Поэтому все проверки дедлайна делаем относительно Минска/Браслава,
+    // а не относительно часового пояса браузера пользователя.
+    function nowMinsk() {
+      return request.time + duration.value(3, 'h');
+    }
+
+    function teacherCanEditOwnMealDate(data) {
+      let now = nowMinsk();
+      return isTeacher()
+        && data.userId == request.auth.uid
+        && (
+          (data.year == now.year()
+            && data.month == now.month()
+            && data.day == now.day()
+            && now.hours() < 9)
+          ||
+          ((data.year > now.year()
+            || (data.year == now.year() && data.month > now.month())
+            || (data.year == now.year() && data.month == now.month() && data.day > now.day()))
+            && now.hours() >= 10)
+        );
+    }
+
+    function foodCanEditDate(data) {
+      let now = nowMinsk();
+      return isFood()
+        && (
+          // Сегодня ответственный за питание может корректировать список с 09:00.
+          (data.year == now.year()
+            && data.month == now.month()
+            && data.day == now.day()
+            && now.hours() >= 9)
+          ||
+          // Будущие даты доступны с 10:00.
+          ((data.year > now.year()
+            || (data.year == now.year() && data.month > now.month())
+            || (data.year == now.year() && data.month == now.month() && data.day > now.day()))
+            && now.hours() >= 10)
+        );
+    }
+
     function teacherCanEditDate(data) {
+      let now = nowMinsk();
       return teacherHasClass(data.classId)
         && (
-          (data.year == request.time.year()
-            && data.month == request.time.month()
-            && data.day == request.time.day()
-            && request.time.hours() < 6)
+          // Текущий день: до 09:00 по Браславу.
+          (data.year == now.year()
+            && data.month == now.month()
+            && data.day == now.day()
+            && now.hours() < 9)
           ||
+          // Будущие дни: с 10:00 по Браславу.
           (
-            (data.year > request.time.year()
-              || (data.year == request.time.year() && data.month > request.time.month())
-              || (data.year == request.time.year() && data.month == request.time.month() && data.day > request.time.day()))
-            && request.time.hours() >= 7
+            (data.year > now.year()
+              || (data.year == now.year() && data.month > now.month())
+              || (data.year == now.year() && data.month == now.month() && data.day > now.day()))
+            && now.hours() >= 10
           )
         );
     }
@@ -90,9 +132,15 @@ service cloud.firestore {
         || (isTeacher() && teacherHasClass(resource.data.classId));
 
       allow create: if isAdmin()
+        || (isFood() && foodCanEditDate(request.resource.data))
         || (isTeacher() && teacherCanEditDate(request.resource.data));
 
       allow update: if isAdmin()
+        || (isFood()
+          && foodCanEditDate(resource.data)
+          && request.resource.data.classId == resource.data.classId
+          && request.resource.data.studentId == resource.data.studentId
+          && request.resource.data.dateKey == resource.data.dateKey)
         || (isTeacher()
           && teacherCanEditDate(resource.data)
           && request.resource.data.classId == resource.data.classId
@@ -107,9 +155,14 @@ service cloud.firestore {
         || (isTeacher() && teacherHasClass(resource.data.classId));
 
       allow create: if isAdmin()
+        || (isFood() && foodCanEditDate(request.resource.data))
         || (isTeacher() && teacherCanEditDate(request.resource.data));
 
       allow update: if isAdmin()
+        || (isFood()
+          && foodCanEditDate(resource.data)
+          && request.resource.data.classId == resource.data.classId
+          && request.resource.data.dateKey == resource.data.dateKey)
         || (isTeacher()
           && teacherCanEditDate(resource.data)
           && request.resource.data.classId == resource.data.classId
@@ -122,12 +175,10 @@ service cloud.firestore {
       allow read: if isAdmin() || isFood()
         || (isTeacher() && resource.data.userId == request.auth.uid);
 
-      allow create: if isTeacher()
-        && request.resource.data.userId == request.auth.uid
+      allow create: if teacherCanEditOwnMealDate(request.resource.data)
         && request.resource.data.status in ["eating", "not_eating"];
 
-      allow update: if isTeacher()
-        && resource.data.userId == request.auth.uid
+      allow update: if teacherCanEditOwnMealDate(resource.data)
         && request.resource.data.userId == request.auth.uid
         && request.resource.data.status in ["eating", "not_eating"];
 
